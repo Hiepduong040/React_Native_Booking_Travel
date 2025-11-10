@@ -1,4 +1,5 @@
 import { API_CONFIG } from '../constants/api';
+import { storageService } from './storage';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
 
@@ -14,7 +15,7 @@ export const api = {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        ...config?.headers,
+        ...(config && config.headers ? config.headers : {}),
       },
     });
     const data = await response.json();
@@ -27,12 +28,19 @@ export const api = {
 
   post: async (url: string, data?: any, config?: any): Promise<ApiResponse> => {
     try {
+      const token = await storageService.getAccessToken();
+      const headers: any = {
+        'Content-Type': 'application/json',
+        ...(config && config.headers ? config.headers : {}),
+      };
+      
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      
       const response = await fetch(`${API_BASE_URL}${url}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...config?.headers,
-        },
+        headers,
         body: JSON.stringify(data),
       });
       
@@ -62,7 +70,7 @@ export const api = {
     } catch (error: any) {
       // Xử lý lỗi network
       if (error.message === 'Network request failed' || error.message === 'Failed to fetch') {
-        const networkError: any = new Error('Không thể kết nối đến server. Vui lòng kiểm tra:\n1. Backend đang chạy\n2. IP address đúng\n3. Device và máy tính cùng mạng WiFi');
+        const networkError: any = new Error('Không thể kết nối đến server. Vui lòng kiểm tra: Backend đang chạy, IP address đúng, và Device và máy tính cùng mạng WiFi');
         networkError.isNetworkError = true;
         throw networkError;
       }
@@ -75,7 +83,7 @@ export const api = {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        ...config?.headers,
+        ...(config && config.headers ? config.headers : {}),
       },
       body: JSON.stringify(data),
     });
@@ -92,7 +100,7 @@ export const api = {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
-        ...config?.headers,
+        ...(config && config.headers ? config.headers : {}),
       },
     });
     const data = await response.json();

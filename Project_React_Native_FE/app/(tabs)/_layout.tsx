@@ -1,15 +1,21 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useSegments } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../constants/theme';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function TabLayout() {
+  const { isAuthenticated } = useAuth();
+  const segments = useSegments();
+  const currentRoute = segments[segments.length - 1];
+  const isOnboarding = currentRoute === 'onboarding';
+
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: '#9CA3AF',
         headerShown: false,
-        tabBarStyle: {
+        tabBarStyle: isOnboarding || !isAuthenticated ? { display: 'none' } : {
           backgroundColor: '#FFFFFF',
           borderTopWidth: 1,
           borderTopColor: '#E5E7EB',
@@ -26,16 +32,16 @@ export default function TabLayout() {
       <Tabs.Screen
         name="booking"
         options={{
-          title: 'Booking',
+          title: 'Home',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bed-outline" size={size || 24} color={color} />
+            <Ionicons name="home-outline" size={size || 24} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="products"
         options={{
-          title: 'Hotels',
+          title: 'Search',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="search-outline" size={size || 24} color={color} />
           ),
@@ -53,19 +59,50 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          href: null, // Hide from tab bar
+          href: null, 
         }}
       />
       <Tabs.Screen
         name="onboarding"
         options={{
-          href: null, // Hide from tab bar
+          href: null,
+          tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen
         name="(products)"
         options={{
-          href: null, // Hide from tab bar
+          href: null, 
+        }}
+      />
+      <Tabs.Screen
+        name="booking-details"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="payment"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="my-bookings"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="booking-success"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="edit-profile"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

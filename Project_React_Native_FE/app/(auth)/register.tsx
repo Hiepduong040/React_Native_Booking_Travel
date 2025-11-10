@@ -19,6 +19,15 @@ import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { authService, RegisterRequest } from "../../services/auth";
 import { theme } from "../../constants/theme";
 
+interface ValidationErrors {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phoneNumber?: string;
+  password?: string;
+  dateOfBirth?: string;
+}
+
 export default function RegisterScreen() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -30,6 +39,7 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<ValidationErrors>({});
   const router = useRouter();
 
   const formatDate = (date: Date): string => {
@@ -46,36 +56,65 @@ export default function RegisterScreen() {
     return `${year}-${month}-${day}`;
   };
 
-  const handleRegister = async () => {
-    // Validate
-    if (!firstName || !lastName || !email || !phoneNumber || !password || !dateOfBirth) {
-      Alert.alert("Lỗi", "Vui lòng điền đầy đủ thông tin");
-      return;
+  const validateForm = (): boolean => {
+    const newErrors: ValidationErrors = {};
+
+    // First Name validation
+    if (!firstName.trim()) {
+      newErrors.firstName = "First name is required";
+    } else if (/[0-9]/.test(firstName)) {
+      newErrors.firstName = "First name cannot contain numbers";
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      Alert.alert("Lỗi", "Email không hợp lệ");
-      return;
+    // Last Name validation
+    if (!lastName.trim()) {
+      newErrors.lastName = "Last name is required";
+    } else if (/[0-9]/.test(lastName)) {
+      newErrors.lastName = "Last name cannot contain numbers";
     }
 
-    // Validate password length
-    if (password.length < 6) {
-      Alert.alert("Lỗi", "Mật khẩu phải có ít nhất 6 ký tự");
-      return;
+    // Email validation - chỉ chấp nhận Gmail
+    if (!email.trim()) {
+      newErrors.email = "Email is required";
+    } else {
+      const emailRegex = /^[^\s@]+@gmail\.com$/i;
+      if (!emailRegex.test(email.trim())) {
+        newErrors.email = "Only Gmail addresses are allowed (@gmail.com)";
+      }
     }
 
-    // Validate phone number (only digits, 10-20 digits)
-    const phoneRegex = /^[0-9]{10,20}$/;
+    // Phone Number validation (10 digits)
     const cleanPhone = phoneNumber.replace(/\D/g, "");
-    if (!phoneRegex.test(cleanPhone)) {
-      Alert.alert("Lỗi", "Số điện thoại phải có 10-20 chữ số");
+    if (!cleanPhone) {
+      newErrors.phoneNumber = "Phone number is required";
+    } else if (cleanPhone.length !== 10) {
+      newErrors.phoneNumber = "Phone number must be exactly 10 digits";
+    }
+
+    // Password validation
+    if (!password) {
+      newErrors.password = "Password is required";
+    } else if (password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters";
+    }
+
+    // Date of Birth validation
+    if (!dateOfBirth) {
+      newErrors.dateOfBirth = "Date of birth is required";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleRegister = async () => {
+    if (!validateForm()) {
       return;
     }
 
     setLoading(true);
     try {
+      const cleanPhone = phoneNumber.replace(/\D/g, "");
       const registerData: RegisterRequest = {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
@@ -124,6 +163,46 @@ export default function RegisterScreen() {
   const handleDateConfirm = (date: Date) => {
     setDateOfBirth(date);
     setShowDatePicker(false);
+    // Clear error when date is selected
+    if (errors.dateOfBirth) {
+      setErrors({ ...errors, dateOfBirth: undefined });
+    }
+  };
+
+  // Clear errors when user types
+  const handleFirstNameChange = (text: string) => {
+    setFirstName(text);
+    if (errors.firstName) {
+      setErrors({ ...errors, firstName: undefined });
+    }
+  };
+
+  const handleLastNameChange = (text: string) => {
+    setLastName(text);
+    if (errors.lastName) {
+      setErrors({ ...errors, lastName: undefined });
+    }
+  };
+
+  const handleEmailChange = (text: string) => {
+    setEmail(text);
+    if (errors.email) {
+      setErrors({ ...errors, email: undefined });
+    }
+  };
+
+  const handlePhoneChange = (text: string) => {
+    setPhoneNumber(text);
+    if (errors.phoneNumber) {
+      setErrors({ ...errors, phoneNumber: undefined });
+    }
+  };
+
+  const handlePasswordChange = (text: string) => {
+    setPassword(text);
+    if (errors.password) {
+      setErrors({ ...errors, password: undefined });
+    }
   };
 
   return (
@@ -158,70 +237,94 @@ export default function RegisterScreen() {
             <View style={styles.inputContainer}>
               <Text style={styles.label}>First Name</Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  errors.firstName && styles.inputError,
+                ]}
                 placeholder="Nguyen"
                 placeholderTextColor="#9CA3AF"
                 value={firstName}
-                onChangeText={setFirstName}
+                onChangeText={handleFirstNameChange}
                 autoCapitalize="words"
                 editable={!loading}
               />
+              {errors.firstName && (
+                <Text style={styles.errorText}>{errors.firstName}</Text>
+              )}
             </View>
 
             {/* Last Name */}
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Last Name</Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  errors.lastName && styles.inputError,
+                ]}
                 placeholder="Van A"
                 placeholderTextColor="#9CA3AF"
                 value={lastName}
-                onChangeText={setLastName}
+                onChangeText={handleLastNameChange}
                 autoCapitalize="words"
                 editable={!loading}
               />
+              {errors.lastName && (
+                <Text style={styles.errorText}>{errors.lastName}</Text>
+              )}
             </View>
 
             {/* Email Field */}
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Email Address</Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  errors.email && styles.inputError,
+                ]}
                 placeholder="user@example.com"
                 placeholderTextColor="#9CA3AF"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={handleEmailChange}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
                 editable={!loading}
               />
+              {errors.email && (
+                <Text style={styles.errorText}>{errors.email}</Text>
+              )}
             </View>
 
             {/* Mobile Number Field */}
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Mobile Number</Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  errors.phoneNumber && styles.inputError,
+                ]}
                 placeholder="0123456789"
                 placeholderTextColor="#9CA3AF"
                 value={phoneNumber}
-                onChangeText={setPhoneNumber}
+                onChangeText={handlePhoneChange}
                 keyboardType="phone-pad"
+                maxLength={10}
                 editable={!loading}
               />
+              {errors.phoneNumber && (
+                <Text style={styles.errorText}>{errors.phoneNumber}</Text>
+              )}
             </View>
 
             {/* Date of Birth Field */}
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Date of Birth</Text>
               <TouchableOpacity
-                style={styles.inputWithIcon}
-                onPress={() => {
-                  if (!loading) {
-                    setShowDatePicker(true);
-                  }
-                }}
+                style={[
+                  styles.inputWithIcon,
+                  errors.dateOfBirth && styles.inputError,
+                ]}
+                onPress={() => setShowDatePicker(true)}
                 disabled={loading}
                 activeOpacity={0.7}
               >
@@ -240,18 +343,24 @@ export default function RegisterScreen() {
                   style={styles.inputIcon}
                 />
               </TouchableOpacity>
+              {errors.dateOfBirth && (
+                <Text style={styles.errorText}>{errors.dateOfBirth}</Text>
+              )}
             </View>
 
             {/* Password Field */}
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Password</Text>
-              <View style={styles.inputWithIcon}>
+              <View style={[
+                styles.inputWithIcon,
+                errors.password && styles.inputError,
+              ]}>
                 <TextInput
                   style={[styles.input, styles.inputWithIconText]}
                   placeholder="**********"
                   placeholderTextColor="#9CA3AF"
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={handlePasswordChange}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   editable={!loading}
@@ -267,6 +376,9 @@ export default function RegisterScreen() {
                   />
                 </TouchableOpacity>
               </View>
+              {errors.password && (
+                <Text style={styles.errorText}>{errors.password}</Text>
+              )}
             </View>
 
             {/* Gender Selection */}
@@ -486,6 +598,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
+  inputError: {
+    borderColor: "#EF4444",
+    borderWidth: 2,
+  },
   inputWithIcon: {
     flexDirection: "row",
     alignItems: "center",
@@ -509,6 +625,12 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     padding: 4,
+  },
+  errorText: {
+    color: "#EF4444",
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 4,
   },
   genderContainer: {
     flexDirection: "row",
@@ -589,4 +711,3 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
-

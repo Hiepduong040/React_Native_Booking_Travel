@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, Link } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useState } from "react";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -18,16 +19,44 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { authService, LoginRequest } from "../../services/auth";
 import { theme } from "../../constants/theme";
 
+interface ValidationErrors {
+  email?: string;
+  password?: string;
+}
+
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<ValidationErrors>({});
   const router = useRouter();
+  const { login } = useAuth();
+
+  const validateForm = (): boolean => {
+    const newErrors: ValidationErrors = {};
+
+    // Email validation - chỉ chấp nhận Gmail
+    if (!email.trim()) {
+      newErrors.email = "Email is required";
+    } else {
+      const emailRegex = /^[^\s@]+@gmail\.com$/i;
+      if (!emailRegex.test(email.trim())) {
+        newErrors.email = "Only Gmail addresses are allowed (@gmail.com)";
+      }
+    }
+
+    // Password validation
+    if (!password) {
+      newErrors.password = "Password is required";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert("Lỗi", "Vui lòng nhập đầy đủ email và mật khẩu");
+    if (!validateForm()) {
       return;
     }
 
@@ -41,9 +70,12 @@ export default function LoginScreen() {
       const response = await authService.login(loginData);
 
       if (response.success && response.data) {
-        // Lưu token vào AsyncStorage hoặc state management
-        // await AsyncStorage.setItem('token', response.data.token);
-        // await AsyncStorage.setItem('refreshToken', response.data.refreshToken);
+        // Lưu token và user data
+        await login(
+          response.data.token,
+          response.data.refreshToken,
+          response.data.user
+        );
         
         Alert.alert("Thành công", response.message || "Đăng nhập thành công!");
         router.replace("/(tabs)/booking");
@@ -72,6 +104,21 @@ export default function LoginScreen() {
     Alert.alert("Thông báo", `Chức năng đăng nhập với ${provider} sẽ được cập nhật sau`);
   };
 
+  // Clear errors when user types
+  const handleEmailChange = (text: string) => {
+    setEmail(text);
+    if (errors.email) {
+      setErrors({ ...errors, email: undefined });
+    }
+  };
+
+  const handlePasswordChange = (text: string) => {
+    setPassword(text);
+    if (errors.password) {
+      setErrors({ ...errors, password: undefined });
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
@@ -94,7 +141,7 @@ export default function LoginScreen() {
 
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Let's get you Login!</Text>
+            <Text style={styles.title}>Let&apos;s get you Login!</Text>
             <Text style={styles.subtitle}>Enter your information below</Text>
           </View>
 
@@ -129,28 +176,37 @@ export default function LoginScreen() {
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Email Address</Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  errors.email && styles.inputError,
+                ]}
                 placeholder="curtis.weaver@example.com"
                 placeholderTextColor="#9CA3AF"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={handleEmailChange}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
                 editable={!loading}
               />
+              {errors.email && (
+                <Text style={styles.errorText}>{errors.email}</Text>
+              )}
             </View>
 
             {/* Password Field */}
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Password</Text>
-              <View style={styles.inputWithIcon}>
+              <View style={[
+                styles.inputWithIcon,
+                errors.password && styles.inputError,
+              ]}>
                 <TextInput
                   style={[styles.input, styles.inputWithIconText]}
                   placeholder="**********"
                   placeholderTextColor="#9CA3AF"
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={handlePasswordChange}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   editable={!loading}
@@ -166,6 +222,9 @@ export default function LoginScreen() {
                   />
                 </TouchableOpacity>
               </View>
+              {errors.password && (
+                <Text style={styles.errorText}>{errors.password}</Text>
+              )}
             </View>
 
             {/* Forgot Password */}
@@ -192,7 +251,7 @@ export default function LoginScreen() {
 
             {/* Switch to Register */}
             <View style={styles.switchContainer}>
-              <Text style={styles.switchText}>Don't have an account? </Text>
+              <Text style={styles.switchText}>Don&apos;t have an account? </Text>
               <Link href="/(auth)/register" asChild>
                 <TouchableOpacity>
                   <Text style={styles.switchLink}>Register Now</Text>
@@ -321,6 +380,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
+  inputError: {
+    borderColor: "#EF4444",
+    borderWidth: 2,
+  },
   inputWithIcon: {
     flexDirection: "row",
     alignItems: "center",
@@ -338,6 +401,12 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     padding: 4,
+  },
+  errorText: {
+    color: "#EF4444",
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 4,
   },
   forgotPassword: {
     alignSelf: "flex-end",
@@ -381,4 +450,3 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
-

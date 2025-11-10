@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuth } from "../../contexts/AuthContext";
 
 const { width, height } = Dimensions.get("window");
 
@@ -31,7 +32,7 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
 
   return (
     <View style={styles.splashContainer}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
       <Animated.View style={[styles.splashContent, { opacity: fadeAnim }]}>
         {imageError ? (
           <>
@@ -65,6 +66,7 @@ const OnboardingApp = () => {
   const [showSplash, setShowSplash] = useState(true);
   const flatListRef = useRef<any>(null);
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
 
   const slides = [
     {
@@ -102,7 +104,14 @@ const OnboardingApp = () => {
       });
       setCurrentIndex(nextIndex);
     } else {
-      router.replace("/(auth)/register");
+      // Kiểm tra xem đã đăng nhập chưa
+      if (isAuthenticated) {
+        // Đã đăng nhập -> chuyển đến booking
+        router.replace("/(tabs)/booking");
+      } else {
+        // Chưa đăng nhập -> chuyển đến login
+        router.replace("/(auth)/login");
+      }
     }
   };
 
@@ -136,7 +145,7 @@ const OnboardingApp = () => {
 
     return (
       <View style={styles.slide}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
         <View style={styles.imageContainer}>
           <Image
             source={{ uri: item.image }}
@@ -189,7 +198,7 @@ const OnboardingApp = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <FlatList
         ref={flatListRef}
         data={slides}
@@ -268,7 +277,7 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     width: width,
-    height: height * 0.65,
+    height: height * 0.68,
     position: "relative",
   },
   backgroundImage: {
@@ -283,7 +292,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    paddingTop: 24,
+    paddingTop: 20,
     paddingHorizontal: 24,
     paddingBottom: 40,
     minHeight: height * 0.35,

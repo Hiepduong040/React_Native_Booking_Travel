@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useRef, useState } from "react";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -22,6 +23,7 @@ import { theme } from "../../constants/theme";
 export default function OTPVerificationScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
+  const { login } = useAuth();
   const email = (params.email as string) || "";
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [timer, setTimer] = useState(60);
@@ -98,9 +100,12 @@ export default function OTPVerificationScreen() {
       const response = await authService.verifyOtp(verifyData);
 
       if (response.success && response.data) {
-        // Lưu token vào AsyncStorage hoặc state management
-        // await AsyncStorage.setItem('token', response.data.token);
-        // await AsyncStorage.setItem('refreshToken', response.data.refreshToken);
+        // Lưu token và user data
+        await login(
+          response.data.token,
+          response.data.refreshToken,
+          response.data.user
+        );
         
         Alert.alert("Thành công", response.message || "Xác minh OTP thành công!", [
           {

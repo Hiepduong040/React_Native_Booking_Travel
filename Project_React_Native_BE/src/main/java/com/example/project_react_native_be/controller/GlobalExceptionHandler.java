@@ -25,6 +25,9 @@ public class GlobalExceptionHandler {
             String fieldName = ((FieldError) error).getField();
             String errorMessage = error.getDefaultMessage();
             errors.put(fieldName, errorMessage);
+            // Debug log
+            log.error("Validation error - Field: {}, Message: {}", fieldName, errorMessage);
+            System.out.println("Validation error - Field: " + fieldName + ", Message: " + errorMessage);
         });
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ApiResponse("Validation failed", false, errors));

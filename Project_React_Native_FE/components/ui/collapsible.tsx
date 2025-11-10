@@ -9,7 +9,12 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export function Collapsible({ children, title }: PropsWithChildren & { title: string }) {
   const [isOpen, setIsOpen] = useState(false);
-  const theme = useColorScheme() ?? 'light';
+  const theme = useColorScheme() || 'light';
+
+  // Safe access với default values
+  const lightIconColor = (Colors.light && Colors.light.icon) || '#666666';
+  const darkIconColor = (Colors.dark && Colors.dark.icon) || '#9BA1A6';
+  const iconColor = theme === 'light' ? lightIconColor : darkIconColor;
 
   return (
     <ThemedView>
@@ -21,7 +26,7 @@ export function Collapsible({ children, title }: PropsWithChildren & { title: st
           name="chevron.right"
           size={18}
           weight="medium"
-          color={theme === 'light' ? Colors.light.icon : Colors.dark.icon}
+          color={iconColor}
           style={{ transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}
         />
 

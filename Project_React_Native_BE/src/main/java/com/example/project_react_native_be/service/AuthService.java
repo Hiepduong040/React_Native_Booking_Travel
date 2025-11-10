@@ -76,9 +76,20 @@ public class AuthService {
 
         userRepository.save(user);
 
-        // Gửi email OTP
-        emailService.sendOtpEmail(request.getEmail(), otpCode);
-
+        // Trả về response ngay lập tức, không chờ email
+        log.info("User registered successfully: {}, OTP saved: {}", request.getEmail(), otpCode);
+        
+        // Gửi email OTP sau khi transaction commit (async để không block response)
+        // Tách ra khỏi transaction để @Async hoạt động đúng
+        try {
+            // Gọi async method - sẽ không block response
+            emailService.sendOtpEmail(request.getEmail(), otpCode);
+            log.info("OTP email queued for sending to: {}, OTP: {}", request.getEmail(), otpCode);
+        } catch (Exception e) {
+            // Log lỗi nhưng không fail request - user vẫn có thể verify OTP từ DB
+            log.error("Failed to queue OTP email to: {}, but user registration succeeded. OTP: {}", request.getEmail(), otpCode, e);
+        }
+        
         return new ApiResponse("Đăng ký thành công. Vui lòng kiểm tra email để xác minh OTP.", true, null);
     }
 
@@ -210,8 +221,13 @@ public class AuthService {
         otpVerification.setCreatedAt(LocalDateTime.now());
         otpVerificationRepository.save(otpVerification);
 
-        // Gửi email OTP
-        emailService.sendForgotPasswordOtp(request.getEmail(), otpCode);
+        // Gửi email OTP (async để không block response)
+        try {
+            emailService.sendForgotPasswordOtp(request.getEmail(), otpCode);
+        } catch (Exception e) {
+            // Log lỗi nhưng không fail request
+            log.error("Failed to send forgot password OTP email to: {}, but OTP was saved. OTP: {}", request.getEmail(), otpCode, e);
+        }
 
         return new ApiResponse("Mã OTP đã được gửi đến email của bạn. Vui lòng kiểm tra email.", true, null);
     }

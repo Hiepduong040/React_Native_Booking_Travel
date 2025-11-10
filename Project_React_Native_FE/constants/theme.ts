@@ -65,4 +65,25 @@ export const theme = {
     lg: 24,
   },
 };
-export const Colors = theme.colors;
+
+// Default Colors object với light và dark mode support
+export const Colors = {
+  light: {
+    text: theme.colors.text || '#1A1A1A',
+    background: theme.colors.background || '#FFFFFF',
+    tint: theme.colors.primary || '#6C63FF',
+    icon: theme.colors.textSecondary || '#666666',
+    tabIconDefault: theme.colors.textSecondary || '#666666',
+    tabIconSelected: theme.colors.primary || '#6C63FF',
+  },
+  dark: {
+    text: '#ECEDEE',
+    background: '#151718',
+    tint: '#FFFFFF',
+    icon: '#9BA1A6',
+    tabIconDefault: '#9BA1A6',
+    tabIconSelected: '#FFFFFF',
+  },
+  // Backward compatibility
+  ...theme.colors,
+};

@@ -8,6 +8,6 @@ export const useProducts = () => {
     queryKey: ['products'],
     queryFn: productService.getAll,
     staleTime: 5 * 60 * 1000, // 5 phút
-    cacheTime: 10 * 60 * 1000, // 10 phút
+    gcTime: 10 * 60 * 1000, // 10 phút
   });
 };

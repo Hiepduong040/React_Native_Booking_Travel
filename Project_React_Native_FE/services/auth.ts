@@ -22,6 +22,17 @@ export interface OtpVerificationRequest {
   otpCode: string;
 }
 
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ResetPasswordRequest {
+  email: string;
+  otpCode: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
 export interface AuthResponse {
   success: boolean;
   message: string;
@@ -65,6 +76,26 @@ export const authService = {
   verifyOtp: async (data: OtpVerificationRequest): Promise<AuthResponse> => {
     try {
       const response = await api.post(`${API_BASE_URL}/verify-otp`, data);
+      return response.data;
+    } catch (error: any) {
+      throw error;
+    }
+  },
+
+  // Quên mật khẩu - gửi OTP
+  forgotPassword: async (data: ForgotPasswordRequest): Promise<AuthResponse> => {
+    try {
+      const response = await api.post(`${API_BASE_URL}/forgot-password`, data);
+      return response.data;
+    } catch (error: any) {
+      throw error;
+    }
+  },
+
+  // Đặt lại mật khẩu
+  resetPassword: async (data: ResetPasswordRequest): Promise<AuthResponse> => {
+    try {
+      const response = await api.post(`${API_BASE_URL}/reset-password`, data);
       return response.data;
     } catch (error: any) {
       throw error;

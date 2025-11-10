@@ -121,5 +121,11 @@ public class AuthController {
         HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return ResponseEntity.status(status).body(response);
     }
+
+    @Operation(summary = "Test endpoint", description = "Endpoint đơn giản để test kết nối")
+    @GetMapping("/test")
+    public ResponseEntity<ApiResponse> test() {
+        return ResponseEntity.ok(new ApiResponse("Backend đang hoạt động!", true, null));
+    }
 }
 
