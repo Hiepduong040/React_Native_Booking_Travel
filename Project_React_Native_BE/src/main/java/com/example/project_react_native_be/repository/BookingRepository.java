@@ -13,18 +13,20 @@ import java.util.Optional;
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, Integer> {
     
-    @Query("SELECT b FROM Booking b " +
+    @Query("SELECT DISTINCT b FROM Booking b " +
            "LEFT JOIN FETCH b.user " +
            "LEFT JOIN FETCH b.room r " +
            "LEFT JOIN FETCH r.hotel " +
+           "LEFT JOIN FETCH r.images " +
            "WHERE b.user.userId = :userId " +
            "ORDER BY b.createdAt DESC")
     List<Booking> findByUserIdOrderByCreatedAtDesc(@Param("userId") Integer userId);
     
-    @Query("SELECT b FROM Booking b " +
+    @Query("SELECT DISTINCT b FROM Booking b " +
            "LEFT JOIN FETCH b.user " +
            "LEFT JOIN FETCH b.room r " +
            "LEFT JOIN FETCH r.hotel " +
+           "LEFT JOIN FETCH r.images " +
            "WHERE b.bookingId = :bookingId")
     Optional<Booking> findByIdWithDetails(@Param("bookingId") Integer bookingId);
     
@@ -48,5 +50,26 @@ public interface BookingRepository extends JpaRepository<Booking, Integer> {
            "WHERE b.status = :status " +
            "ORDER BY b.createdAt DESC")
     List<Booking> findByStatusOrderByCreatedAtDesc(@Param("status") Booking.BookingStatus status);
+    
+    @Query("SELECT DISTINCT b FROM Booking b " +
+           "LEFT JOIN FETCH b.user " +
+           "LEFT JOIN FETCH b.room r " +
+           "LEFT JOIN FETCH r.hotel " +
+           "LEFT JOIN FETCH r.images " +
+           "WHERE b.user.userId = :userId " +
+           "AND b.checkIn >= :today " +
+           "AND b.status != 'CANCELLED' " +
+           "ORDER BY b.checkIn ASC")
+    List<Booking> findUpcomingBookingsByUserId(@Param("userId") Integer userId, @Param("today") LocalDate today);
+    
+    @Query("SELECT DISTINCT b FROM Booking b " +
+           "LEFT JOIN FETCH b.user " +
+           "LEFT JOIN FETCH b.room r " +
+           "LEFT JOIN FETCH r.hotel " +
+           "LEFT JOIN FETCH r.images " +
+           "WHERE b.user.userId = :userId " +
+           "AND (b.checkOut < :today OR b.status = 'CANCELLED') " +
+           "ORDER BY b.checkOut DESC")
+    List<Booking> findPastBookingsByUserId(@Param("userId") Integer userId, @Param("today") LocalDate today);
 }
 

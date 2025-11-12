@@ -1,35 +1,28 @@
-/**
- * Booking colors and constants
- * Used throughout the booking flow screens
- */
-
 export const BOOKING_COLORS = {
-  PRIMARY: '#6C63FF',
+  PRIMARY: '#6C7CE7',
   BACKGROUND: '#FFFFFF',
-  CARD_BACKGROUND: '#F8F9FA',
   TEXT_PRIMARY: '#1A1A1A',
-  TEXT_SECONDARY: '#666666',
-  BORDER: '#E0E0E0',
+  TEXT_SECONDARY: '#6B7280',
+  BORDER: '#E5E7EB',
+  CARD_BACKGROUND: '#F9FAFB',
   RATING: '#FFB800',
-  HEART: '#FF3B30',
-  PRICE: '#6C63FF',
-};
+  PRICE: '#6C7CE7',
+  HEART: '#EF4444',
+} as const;
 
 export interface Hotel {
-  hotelId?: number;
-  hotelName?: string;
-  id?: string; // For UI mapping from RoomResponse
-  name?: string; // For UI mapping from RoomResponse
-  address?: string;
-  city?: string;
-  country?: string;
-  location?: string; // For UI display
-  description?: string;
-  images?: string[];
-  imageUrl?: string; // For UI display
-  rating?: number;
-  reviewCount?: number;
-  price?: number;
-  isFavorite?: boolean; // For favorite functionality
+  id: string;
+  name: string;
+  location: string;
+  price: number;
+  rating: number;
+  reviewCount: number;
+  imageUrl: string;
+  isFavorite?: boolean;
 }
 
+export interface City {
+  id: string;
+  name: string;
+  imageUrl: string;
+}

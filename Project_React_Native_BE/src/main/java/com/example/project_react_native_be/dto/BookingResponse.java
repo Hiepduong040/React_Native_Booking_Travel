@@ -58,11 +58,20 @@ public class BookingResponse {
         @Schema(description = "Price per night", example = "500000.00")
         private BigDecimal price;
 
+        @Schema(description = "Hotel ID", example = "1")
+        private Integer hotelId;
+
         @Schema(description = "Hotel name", example = "Grand Hotel")
         private String hotelName;
 
         @Schema(description = "Hotel city", example = "Ho Chi Minh")
         private String hotelCity;
+
+        @Schema(description = "Hotel address", example = "123 Main Street")
+        private String hotelAddress;
+
+        @Schema(description = "Room image URL (first image)", example = "https://example.com/room1.jpg")
+        private String roomImageUrl;
     }
 }
 

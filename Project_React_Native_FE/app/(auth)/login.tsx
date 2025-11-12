@@ -78,7 +78,7 @@ export default function LoginScreen() {
         );
         
         Alert.alert("Thành công", response.message || "Đăng nhập thành công!");
-        router.replace("/(tabs)/booking");
+        router.replace("/(tabs)/index");
       } else {
         Alert.alert("Lỗi", response.message || "Đăng nhập thất bại");
       }
@@ -134,7 +134,7 @@ export default function LoginScreen() {
           {/* Logo */}
           <View style={styles.logoContainer}>
             <View style={styles.logoCircle}>
-              <View style={styles.logoCircleInner} />
+              {/* <View style={styles.logoCircleInner} /> */}
             </View>
             <Text style={styles.logoText}>Live Green</Text>
           </View>

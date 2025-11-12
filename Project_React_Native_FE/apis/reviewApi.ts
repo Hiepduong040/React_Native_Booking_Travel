@@ -96,6 +96,28 @@ export const createReview = async (request: ReviewRequest): Promise<ReviewRespon
   }
 };
 
+export const updateReview = async (reviewId: number, request: ReviewRequest): Promise<ReviewResponse> => {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/api/reviews/${reviewId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(request),
+    });
+
+    const data = await handleResponse(response);
+    return data as ReviewResponse;
+  } catch (error: any) {
+    console.error('Error updating review:', error);
+    if (error.message === 'Network request failed' || error.message === 'Failed to fetch') {
+      const networkError: any = new Error('Không thể kết nối đến server.');
+      networkError.isNetworkError = true;
+      throw networkError;
+    }
+    throw error;
+  }
+};
+
 export const getReviewsByRoomId = async (roomId: number): Promise<ReviewResponse[]> => {
   try {
     const headers = await getAuthHeaders();
@@ -139,6 +161,39 @@ export const getReviewsByHotelId = async (hotelId: number): Promise<ReviewRespon
     return [];
   } catch (error: any) {
     console.error('Error fetching reviews:', error);
+    if (error.message === 'Network request failed' || error.message === 'Failed to fetch') {
+      const networkError: any = new Error('Không thể kết nối đến server.');
+      networkError.isNetworkError = true;
+      throw networkError;
+    }
+    throw error;
+  }
+};
+
+export const getMyReviewByRoomId = async (roomId: number): Promise<ReviewResponse | null> => {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/api/reviews/my-review/room/${roomId}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    const data = await handleResponse(response);
+
+    if (!data) {
+      return null;
+    }
+
+    return data as ReviewResponse;
+  } catch (error: any) {
+    console.error('Error fetching my review by room ID:', error);
+    if (error.status === 404) {
+      return null;
+    }
     if (error.message === 'Network request failed' || error.message === 'Failed to fetch') {
       const networkError: any = new Error('Không thể kết nối đến server.');
       networkError.isNetworkError = true;

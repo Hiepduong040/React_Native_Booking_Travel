@@ -2,6 +2,7 @@ package com.example.project_react_native_be.service;
 
 import com.example.project_react_native_be.dto.*;
 import com.example.project_react_native_be.entity.Booking;
+import com.example.project_react_native_be.entity.Hotel;
 import com.example.project_react_native_be.entity.Room;
 import com.example.project_react_native_be.entity.User;
 import com.example.project_react_native_be.repository.BookingRepository;
@@ -187,6 +188,102 @@ public class BookingService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public ApiResponse getUpcomingBookings() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return new ApiResponse("Người dùng chưa đăng nhập", false, null);
+            }
+
+            String userEmail = authentication.getName();
+            User user = userRepository.findByEmail(userEmail)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng"));
+
+            LocalDate today = LocalDate.now();
+            List<Booking> bookings = bookingRepository.findUpcomingBookingsByUserId(user.getUserId(), today);
+            List<BookingResponse> bookingResponses = bookings.stream()
+                    .map(this::convertToBookingResponse)
+                    .collect(Collectors.toList());
+
+            return new ApiResponse("Lấy danh sách booking sắp tới thành công", true, bookingResponses);
+        } catch (Exception e) {
+            log.error("Error getting upcoming bookings", e);
+            return new ApiResponse("Lỗi khi lấy danh sách booking sắp tới: " + e.getMessage(), false, null);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public ApiResponse getPastBookings() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return new ApiResponse("Người dùng chưa đăng nhập", false, null);
+            }
+
+            String userEmail = authentication.getName();
+            User user = userRepository.findByEmail(userEmail)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng"));
+
+            LocalDate today = LocalDate.now();
+            List<Booking> bookings = bookingRepository.findPastBookingsByUserId(user.getUserId(), today);
+            List<BookingResponse> bookingResponses = bookings.stream()
+                    .map(this::convertToBookingResponse)
+                    .collect(Collectors.toList());
+
+            return new ApiResponse("Lấy danh sách booking đã qua thành công", true, bookingResponses);
+        } catch (Exception e) {
+            log.error("Error getting past bookings", e);
+            return new ApiResponse("Lỗi khi lấy danh sách booking đã qua: " + e.getMessage(), false, null);
+        }
+    }
+
+    @Transactional
+    public ApiResponse cancelBooking(Integer bookingId) {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return new ApiResponse("Người dùng chưa đăng nhập", false, null);
+            }
+
+            String userEmail = authentication.getName();
+            User user = userRepository.findByEmail(userEmail)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng"));
+
+            // Get booking
+            Booking booking = bookingRepository.findByIdWithDetails(bookingId)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy booking với ID: " + bookingId));
+
+            // Verify booking belongs to user
+            if (!booking.getUser().getUserId().equals(user.getUserId())) {
+                return new ApiResponse("Bạn không có quyền hủy booking này", false, null);
+            }
+
+            // Check if booking can be cancelled (only if check-in hasn't passed)
+            LocalDate today = LocalDate.now();
+            if (booking.getCheckIn().isBefore(today)) {
+                return new ApiResponse("Không thể hủy booking đã bắt đầu", false, null);
+            }
+
+            // Check if already cancelled
+            if (booking.getStatus() == Booking.BookingStatus.CANCELLED) {
+                return new ApiResponse("Booking này đã được hủy trước đó", false, null);
+            }
+
+            // Cancel booking
+            booking.setStatus(Booking.BookingStatus.CANCELLED);
+            Booking savedBooking = bookingRepository.save(booking);
+
+            // Convert to response
+            BookingResponse response = convertToBookingResponse(savedBooking);
+
+            return new ApiResponse("Hủy booking thành công", true, response);
+        } catch (Exception e) {
+            log.error("Error canceling booking", e);
+            return new ApiResponse("Lỗi khi hủy booking: " + e.getMessage(), false, null);
+        }
+    }
+
     private BookingResponse convertToBookingResponse(Booking booking) {
         BookingResponse response = new BookingResponse();
         response.setBookingId(booking.getBookingId());
@@ -201,13 +298,24 @@ public class BookingService {
 
         if (booking.getRoom() != null) {
             BookingResponse.RoomInfo roomInfo = new BookingResponse.RoomInfo();
-            roomInfo.setRoomId(booking.getRoom().getRoomId());
-            roomInfo.setRoomType(booking.getRoom().getRoomType());
-            roomInfo.setPrice(booking.getRoom().getPrice());
+            Room room = booking.getRoom();
+            roomInfo.setRoomId(room.getRoomId());
+            roomInfo.setRoomType(room.getRoomType());
+            roomInfo.setPrice(room.getPrice());
             
-            if (booking.getRoom().getHotel() != null) {
-                roomInfo.setHotelName(booking.getRoom().getHotel().getHotelName());
-                roomInfo.setHotelCity(booking.getRoom().getHotel().getCity());
+            // Get first room image URL
+            String roomImageUrl = null;
+            if (room.getImages() != null && !room.getImages().isEmpty()) {
+                roomImageUrl = room.getImages().get(0).getImageUrl();
+                roomInfo.setRoomImageUrl(roomImageUrl);
+            }
+            
+            if (room.getHotel() != null) {
+                Hotel hotel = room.getHotel();
+                roomInfo.setHotelId(hotel.getHotelId());
+                roomInfo.setHotelName(hotel.getHotelName());
+                roomInfo.setHotelCity(hotel.getCity());
+                roomInfo.setHotelAddress(hotel.getAddress());
             }
             
             response.setRoom(roomInfo);

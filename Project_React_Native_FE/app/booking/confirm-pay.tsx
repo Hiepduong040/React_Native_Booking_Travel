@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   StatusBar,
   ScrollView,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,12 +15,25 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import { BOOKING_COLORS } from '@/constants/booking';
 
+// Discount codes database (trong thực tế sẽ lấy từ backend)
+const DISCOUNT_CODES: Record<string, { type: 'percentage' | 'fixed'; value: number; minAmount?: number }> = {
+  WELCOME10: { type: 'percentage', value: 10 }, // 10% off
+  SAVE20: { type: 'fixed', value: 20 }, // $20 off
+  SAVE50: { type: 'fixed', value: 50, minAmount: 200 }, // $50 off if order >= $200
+  DISCOUNT15: { type: 'percentage', value: 15 }, // 15% off
+  NEWUSER: { type: 'percentage', value: 20 }, // 20% off for new users
+};
+
 export default function ConfirmPayScreen(): React.JSX.Element {
   const router = useRouter();
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   
   const [paymentType, setPaymentType] = useState<'full' | 'partial'>('full');
+  const [discountCode, setDiscountCode] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; amount: number } | null>(null);
+  const [discountError, setDiscountError] = useState('');
+  
   const adults = parseInt(params.adults as string) || 2;
   const children = parseInt(params.children as string) || 0;
   const infants = parseInt(params.infants as string) || 0;
@@ -34,9 +49,69 @@ export default function ConfirmPayScreen(): React.JSX.Element {
   // Calculate total price: room price * number of guests * number of nights
   const totalGuests = adults + children; // infants don't count
   const subtotal = roomPrice * totalGuests * nights;
-  const discount = 0; // No discount for now
-  const taxes = Math.round(subtotal * 0.1); // 10% tax
-  const total = subtotal - discount + taxes;
+  
+  // Calculate discount
+  const calculateDiscount = (code: string): number => {
+    const upperCode = code.toUpperCase().trim();
+    const discountInfo = DISCOUNT_CODES[upperCode];
+    
+    if (!discountInfo) {
+      return 0;
+    }
+    
+    if (discountInfo.minAmount && subtotal < discountInfo.minAmount) {
+      return 0;
+    }
+    
+    if (discountInfo.type === 'percentage') {
+      return Math.round((subtotal * discountInfo.value) / 100);
+    } else {
+      // Fixed amount, but not more than subtotal
+      return Math.min(discountInfo.value, subtotal);
+    }
+  };
+  
+  const discountAmount = appliedDiscount ? appliedDiscount.amount : 0;
+  const taxes = Math.round((subtotal - discountAmount) * 0.1); // 10% tax on discounted amount
+  const total = subtotal - discountAmount + taxes;
+  
+  const handleApplyDiscount = () => {
+    if (!discountCode.trim()) {
+      setDiscountError('Vui lòng nhập mã giảm giá');
+      return;
+    }
+    
+    const upperCode = discountCode.toUpperCase().trim();
+    const discountInfo = DISCOUNT_CODES[upperCode];
+    
+    if (!discountInfo) {
+      setDiscountError('Mã giảm giá không hợp lệ');
+      setAppliedDiscount(null);
+      return;
+    }
+    
+    if (discountInfo.minAmount && subtotal < discountInfo.minAmount) {
+      setDiscountError(`Đơn hàng tối thiểu $${discountInfo.minAmount} để sử dụng mã này`);
+      setAppliedDiscount(null);
+      return;
+    }
+    
+    const discount = calculateDiscount(upperCode);
+    if (discount > 0) {
+      setAppliedDiscount({ code: upperCode, amount: discount });
+      setDiscountError('');
+      Alert.alert('Thành công', `Mã giảm giá "${upperCode}" đã được áp dụng!`);
+    } else {
+      setDiscountError('Mã giảm giá không hợp lệ');
+      setAppliedDiscount(null);
+    }
+  };
+  
+  const handleRemoveDiscount = () => {
+    setAppliedDiscount(null);
+    setDiscountCode('');
+    setDiscountError('');
+  };
 
   const handlePayNow = () => {
     // Pass all booking params to add card screen
@@ -48,6 +123,8 @@ export default function ConfirmPayScreen(): React.JSX.Element {
         checkIn: params.checkIn || '2023-05-06',
         checkOut: params.checkOut || '2023-05-08',
         totalPrice: total.toFixed(2),
+        discountCode: appliedDiscount?.code || '',
+        discountAmount: discountAmount.toFixed(2),
       },
     });
   };
@@ -177,6 +254,50 @@ export default function ConfirmPayScreen(): React.JSX.Element {
           </View>
         </View>
 
+        {/* Discount Code Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Discount Code</Text>
+          {appliedDiscount ? (
+            <View style={styles.discountAppliedContainer}>
+              <View style={styles.discountAppliedInfo}>
+                <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                <Text style={styles.discountAppliedText}>
+                  Mã "{appliedDiscount.code}" đã được áp dụng: -${appliedDiscount.amount.toFixed(2)}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={handleRemoveDiscount}>
+                <Ionicons name="close-circle" size={20} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.discountInputContainer}>
+              <TextInput
+                style={[styles.discountInput, discountError && styles.discountInputError]}
+                placeholder="Nhập mã giảm giá"
+                placeholderTextColor={BOOKING_COLORS.TEXT_SECONDARY}
+                value={discountCode}
+                onChangeText={(text) => {
+                  setDiscountCode(text.toUpperCase());
+                  setDiscountError('');
+                }}
+                autoCapitalize="characters"
+              />
+              <TouchableOpacity
+                style={styles.applyButton}
+                onPress={handleApplyDiscount}
+              >
+                <Text style={styles.applyButtonText}>Áp dụng</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {discountError ? (
+            <Text style={styles.discountErrorText}>{discountError}</Text>
+          ) : null}
+          <Text style={styles.discountHint}>
+            Mã giảm giá mẫu: WELCOME10 (10% off), SAVE20 ($20 off), DISCOUNT15 (15% off)
+          </Text>
+        </View>
+
         {/* Price Details */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Price Details</Text>
@@ -184,10 +305,10 @@ export default function ConfirmPayScreen(): React.JSX.Element {
             <Text style={styles.priceLabel}>${roomPrice.toFixed(2)} x {totalGuests} guests x {nights} nights</Text>
             <Text style={styles.priceValue}>${subtotal.toFixed(2)}</Text>
           </View>
-          {discount > 0 && (
+          {discountAmount > 0 && (
             <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Discount</Text>
-              <Text style={[styles.priceValue, styles.discountValue]}>-${discount.toFixed(2)}</Text>
+              <Text style={styles.priceLabel}>Discount ({appliedDiscount?.code})</Text>
+              <Text style={[styles.priceValue, styles.discountValue]}>-${discountAmount.toFixed(2)}</Text>
             </View>
           )}
           <View style={styles.priceRow}>
@@ -420,5 +541,70 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: BOOKING_COLORS.BACKGROUND,
+  },
+  discountInputContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+  },
+  discountInput: {
+    flex: 1,
+    backgroundColor: BOOKING_COLORS.CARD_BACKGROUND,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: BOOKING_COLORS.BORDER,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: BOOKING_COLORS.TEXT_PRIMARY,
+  },
+  discountInputError: {
+    borderColor: '#EF4444',
+  },
+  applyButton: {
+    backgroundColor: BOOKING_COLORS.PRIMARY,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  applyButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: BOOKING_COLORS.BACKGROUND,
+  },
+  discountErrorText: {
+    fontSize: 12,
+    color: '#EF4444',
+    marginTop: 4,
+  },
+  discountHint: {
+    fontSize: 12,
+    color: BOOKING_COLORS.TEXT_SECONDARY,
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  discountAppliedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F0FDF4',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#10B981',
+  },
+  discountAppliedInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 8,
+  },
+  discountAppliedText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#10B981',
+    flex: 1,
   },
 });

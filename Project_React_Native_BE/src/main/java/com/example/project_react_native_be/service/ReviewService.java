@@ -72,6 +72,41 @@ public class ReviewService {
         }
     }
 
+    @Transactional
+    public ApiResponse updateReview(Integer reviewId, ReviewRequest request) {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return new ApiResponse("Người dùng chưa đăng nhập", false, null);
+            }
+
+            String userEmail = authentication.getName();
+            User user = userRepository.findByEmail(userEmail)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng"));
+
+            Review review = reviewRepository.findByIdWithUserAndHotel(reviewId)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy đánh giá với ID: " + reviewId));
+
+            if (!review.getUser().getUserId().equals(user.getUserId())) {
+                return new ApiResponse("Bạn không có quyền chỉnh sửa đánh giá này", false, null);
+            }
+
+            if (request.getHotelId() != null && !review.getHotel().getHotelId().equals(request.getHotelId())) {
+                return new ApiResponse("Đánh giá không thuộc về khách sạn được chỉ định", false, null);
+            }
+
+            review.setRating(request.getRating());
+            review.setComment(request.getComment());
+
+            Review saved = reviewRepository.save(review);
+            ReviewResponse response = convertToReviewResponse(saved);
+            return new ApiResponse("Cập nhật đánh giá thành công", true, response);
+        } catch (Exception e) {
+            log.error("Error updating review", e);
+            return new ApiResponse("Lỗi khi cập nhật đánh giá: " + e.getMessage(), false, null);
+        }
+    }
+
     @Transactional(readOnly = true)
     public ApiResponse getReviewsByRoomId(Integer roomId) {
         try {
@@ -110,6 +145,39 @@ public class ReviewService {
         } catch (Exception e) {
             log.error("Error getting reviews by hotel ID", e);
             return new ApiResponse("Lỗi khi lấy danh sách đánh giá: " + e.getMessage(), false, null);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public ApiResponse getMyReviewByRoomId(Integer roomId) {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return new ApiResponse("Người dùng chưa đăng nhập", false, null);
+            }
+
+            String userEmail = authentication.getName();
+            User user = userRepository.findByEmail(userEmail)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng"));
+
+            Room room = roomRepository.findById(roomId)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy phòng với ID: " + roomId));
+
+            Hotel hotel = room.getHotel();
+            if (hotel == null) {
+                return new ApiResponse("Phòng không thuộc khách sạn nào", false, null);
+            }
+
+            Optional<Review> existingReview = reviewRepository.findByHotelIdAndUserId(hotel.getHotelId(), user.getUserId());
+            if (existingReview.isEmpty()) {
+                return new ApiResponse("Bạn chưa đánh giá khách sạn này", false, null);
+            }
+
+            ReviewResponse response = convertToReviewResponse(existingReview.get());
+            return new ApiResponse("Lấy đánh giá thành công", true, response);
+        } catch (Exception e) {
+            log.error("Error getting my review by room ID", e);
+            return new ApiResponse("Lỗi khi lấy đánh giá: " + e.getMessage(), false, null);
         }
     }
 

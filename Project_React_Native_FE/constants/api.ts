@@ -5,7 +5,7 @@
 
 const getBaseUrl = () => {
   if (typeof __DEV__ !== 'undefined' && __DEV__) {
-    return 'http://192.168.0.178:9999'; // Thay đổi IP này
+    return 'http://192.168.1.78:9999'; // Thay đổi IP này
   }
   return 'https://your-production-api.com'; // Production URL
 };

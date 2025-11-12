@@ -9,15 +9,18 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getCurrentUserInfo, updateUserInfo, UpdateUserRequest } from '../../apis/userApi';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
+import { uploadImageToCloudinary } from '../../services/cloudinary';
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -40,6 +43,15 @@ export default function EditProfileScreen() {
     gender: undefined,
     avatarUrl: '',
   });
+  const [validationErrors, setValidationErrors] = useState<{
+    firstName?: string;
+    lastName?: string;
+    phoneNumber?: string;
+    dateOfBirth?: string;
+    gender?: string;
+  }>({});
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [localImageUri, setLocalImageUri] = useState<string | null>(null);
 
   useEffect(() => {
     if (userInfo) {
@@ -51,8 +63,26 @@ export default function EditProfileScreen() {
         gender: userInfo.gender || undefined,
         avatarUrl: userInfo.avatarUrl || '',
       });
+      if (userInfo.avatarUrl) {
+        setLocalImageUri(userInfo.avatarUrl);
+      }
     }
   }, [userInfo]);
+
+  // Request permissions for image picker
+  useEffect(() => {
+    (async () => {
+      if (Platform.OS !== 'web') {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            'Cần quyền truy cập',
+            'Ứng dụng cần quyền truy cập thư viện ảnh để upload ảnh đại diện.',
+          );
+        }
+      }
+    })();
+  }, []);
 
   const updateMutation = useMutation({
     mutationFn: updateUserInfo,
@@ -73,6 +103,9 @@ export default function EditProfileScreen() {
   const handleDateConfirm = (selectedDate: Date) => {
     const dateString = selectedDate.toISOString().split('T')[0];
     setFormData({ ...formData, dateOfBirth: dateString });
+    if (validationErrors.dateOfBirth) {
+      setValidationErrors({ ...validationErrors, dateOfBirth: undefined });
+    }
     setShowDatePicker(false);
   };
 
@@ -86,25 +119,102 @@ export default function EditProfileScreen() {
     });
   };
 
-  const formatPhoneNumber = (phone: string): string => {
-    // Format: (XXX) XXX-XXXX
-    const cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length === 0) return '';
-    if (cleaned.length <= 3) return `(${cleaned}`;
-    if (cleaned.length <= 6) return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
-    return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6, 10)}`;
-  };
-
   const handlePhoneChange = (text: string) => {
     const cleaned = text.replace(/\D/g, '');
-    if (cleaned.length <= 10) {
+    if (cleaned.length <= 20) {
       setFormData({ ...formData, phoneNumber: cleaned });
+      // Clear error khi người dùng nhập
+      if (validationErrors.phoneNumber) {
+        setValidationErrors({ ...validationErrors, phoneNumber: undefined });
+      }
+    }
+  };
+
+  const validateForm = (): boolean => {
+    const errors: {
+      firstName?: string;
+      lastName?: string;
+      phoneNumber?: string;
+      dateOfBirth?: string;
+      gender?: string;
+    } = {};
+
+    // Validate firstName
+    if (!formData.firstName || !formData.firstName.trim()) {
+      errors.firstName = 'Họ không được để trống';
+    } else if (/[0-9]/.test(formData.firstName)) {
+      errors.firstName = 'Họ không được chứa số';
+    }
+
+    // Validate lastName
+    if (!formData.lastName || !formData.lastName.trim()) {
+      errors.lastName = 'Tên không được để trống';
+    } else if (/[0-9]/.test(formData.lastName)) {
+      errors.lastName = 'Tên không được chứa số';
+    }
+
+    // Validate phoneNumber
+    if (!formData.phoneNumber || !formData.phoneNumber.trim()) {
+      errors.phoneNumber = 'Số điện thoại không được để trống';
+    } else {
+      const cleanPhone = formData.phoneNumber.replace(/\D/g, '');
+      if (cleanPhone.length < 10 || cleanPhone.length > 20) {
+        errors.phoneNumber = 'Số điện thoại phải có từ 10 đến 20 chữ số';
+      } else if (!/^[0-9]{10,20}$/.test(cleanPhone)) {
+        errors.phoneNumber = 'Số điện thoại không hợp lệ';
+      }
+    }
+
+    // Validate dateOfBirth
+    if (!formData.dateOfBirth) {
+      errors.dateOfBirth = 'Ngày sinh không được để trống';
+    }
+
+    // Validate gender
+    if (!formData.gender) {
+      errors.gender = 'Giới tính không được để trống';
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handlePickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: [ImagePicker.MediaType.Images],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const imageUri = result.assets[0].uri;
+        setLocalImageUri(imageUri);
+        
+        // Upload image to Cloudinary
+        setUploadingImage(true);
+        try {
+          const uploadResult = await uploadImageToCloudinary(imageUri);
+          setFormData({ ...formData, avatarUrl: uploadResult.secure_url });
+          Alert.alert('Thành công', 'Ảnh đã được upload thành công');
+        } catch (error: any) {
+          console.error('Error uploading image:', error);
+          Alert.alert('Lỗi', error.message || 'Không thể upload ảnh. Vui lòng thử lại.');
+          setLocalImageUri(null);
+        } finally {
+          setUploadingImage(false);
+        }
+      }
+    } catch (error: any) {
+      console.error('Error picking image:', error);
+      Alert.alert('Lỗi', 'Không thể chọn ảnh. Vui lòng thử lại.');
     }
   };
 
   const handleUpdate = () => {
-    if (!formData.firstName || !formData.lastName) {
-      Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ họ và tên');
+    if (!validateForm()) {
+      Alert.alert('Lỗi', 'Vui lòng điền đầy đủ thông tin và kiểm tra lại các trường bị lỗi');
       return;
     }
     updateMutation.mutate(formData);
@@ -120,8 +230,6 @@ export default function EditProfileScreen() {
       </SafeAreaView>
     );
   }
-
-  const fullName = `${formData.firstName || ''} ${formData.lastName || ''}`.trim();
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -140,38 +248,76 @@ export default function EditProfileScreen() {
         {/* Profile Picture */}
         <View style={styles.profilePictureContainer}>
           <View style={styles.profilePictureWrapper}>
-            {userInfo?.avatarUrl ? (
+            {uploadingImage ? (
+              <View style={styles.profilePicturePlaceholder}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+              </View>
+            ) : localImageUri ? (
+              <Image source={{ uri: localImageUri }} style={styles.profilePicture} />
+            ) : userInfo?.avatarUrl ? (
               <Image source={{ uri: userInfo.avatarUrl }} style={styles.profilePicture} />
             ) : (
               <View style={styles.profilePicturePlaceholder}>
                 <Ionicons name="person" size={60} color="#9CA3AF" />
               </View>
             )}
-            <TouchableOpacity style={styles.editPictureButton}>
-              <Ionicons name="create" size={16} color="#FFFFFF" />
+            <TouchableOpacity
+              style={[styles.editPictureButton, uploadingImage && styles.editPictureButtonDisabled]}
+              onPress={handlePickImage}
+              disabled={uploadingImage}>
+              {uploadingImage ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons name="create" size={16} color="#FFFFFF" />
+              )}
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Input Fields */}
         <View style={styles.inputContainer}>
-          {/* Name */}
+          {/* First Name */}
           <View style={styles.inputField}>
-            <Text style={styles.inputLabel}>Name</Text>
-            <View style={styles.inputBox}>
+            <Text style={styles.inputLabel}>First Name</Text>
+            <View style={[styles.inputBox, validationErrors.firstName && styles.inputBoxError]}>
               <TextInput
                 style={styles.inputText}
-                value={fullName}
+                value={formData.firstName || ''}
                 onChangeText={(text) => {
-                  const parts = text.split(' ');
-                  const lastName = parts.pop() || '';
-                  const firstName = parts.join(' ') || '';
-                  setFormData({ ...formData, firstName, lastName });
+                  setFormData({ ...formData, firstName: text });
+                  if (validationErrors.firstName) {
+                    setValidationErrors({ ...validationErrors, firstName: undefined });
+                  }
                 }}
-                placeholder="Enter your name"
+                placeholder="Enter your first name"
                 placeholderTextColor="#9CA3AF"
               />
             </View>
+            {validationErrors.firstName && (
+              <Text style={styles.errorText}>{validationErrors.firstName}</Text>
+            )}
+          </View>
+
+          {/* Last Name */}
+          <View style={styles.inputField}>
+            <Text style={styles.inputLabel}>Last Name</Text>
+            <View style={[styles.inputBox, validationErrors.lastName && styles.inputBoxError]}>
+              <TextInput
+                style={styles.inputText}
+                value={formData.lastName || ''}
+                onChangeText={(text) => {
+                  setFormData({ ...formData, lastName: text });
+                  if (validationErrors.lastName) {
+                    setValidationErrors({ ...validationErrors, lastName: undefined });
+                  }
+                }}
+                placeholder="Enter your last name"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+            {validationErrors.lastName && (
+              <Text style={styles.errorText}>{validationErrors.lastName}</Text>
+            )}
           </View>
 
           {/* Email Address (Read-only) */}
@@ -185,24 +331,27 @@ export default function EditProfileScreen() {
           {/* Mobile Number */}
           <View style={styles.inputField}>
             <Text style={styles.inputLabel}>Mobile Number</Text>
-            <View style={styles.inputBox}>
+            <View style={[styles.inputBox, validationErrors.phoneNumber && styles.inputBoxError]}>
               <TextInput
                 style={styles.inputText}
-                value={formatPhoneNumber(formData.phoneNumber || '')}
+                value={formData.phoneNumber || ''}
                 onChangeText={handlePhoneChange}
-                placeholder="(XXX) XXX-XXXX"
+                placeholder="Nhập số điện thoại (10-20 chữ số)"
                 placeholderTextColor="#9CA3AF"
                 keyboardType="phone-pad"
-                maxLength={14}
+                maxLength={20}
               />
             </View>
+            {validationErrors.phoneNumber && (
+              <Text style={styles.errorText}>{validationErrors.phoneNumber}</Text>
+            )}
           </View>
 
           {/* Date of Birth */}
           <View style={styles.inputField}>
             <Text style={styles.inputLabel}>Date of Birth</Text>
             <TouchableOpacity
-              style={styles.inputBox}
+              style={[styles.inputBox, validationErrors.dateOfBirth && styles.inputBoxError]}
               onPress={() => setShowDatePicker(true)}
             >
               <Text style={[styles.inputText, !formData.dateOfBirth && styles.inputTextPlaceholder]}>
@@ -210,16 +359,27 @@ export default function EditProfileScreen() {
               </Text>
               <Ionicons name="calendar-outline" size={20} color={theme.colors.primary} />
             </TouchableOpacity>
+            {validationErrors.dateOfBirth && (
+              <Text style={styles.errorText}>{validationErrors.dateOfBirth}</Text>
+            )}
           </View>
         </View>
 
         {/* Gender Selection */}
         <View style={styles.genderContainer}>
           <Text style={styles.genderTitle}>Gender</Text>
+          {validationErrors.gender && (
+            <Text style={styles.errorText}>{validationErrors.gender}</Text>
+          )}
           <View style={styles.genderOptions}>
             <TouchableOpacity
               style={styles.genderOption}
-              onPress={() => setFormData({ ...formData, gender: 'MALE' })}
+              onPress={() => {
+                setFormData({ ...formData, gender: 'MALE' });
+                if (validationErrors.gender) {
+                  setValidationErrors({ ...validationErrors, gender: undefined });
+                }
+              }}
             >
               <View style={styles.radioButton}>
                 {formData.gender === 'MALE' && <View style={styles.radioButtonInner} />}
@@ -229,7 +389,12 @@ export default function EditProfileScreen() {
 
             <TouchableOpacity
               style={styles.genderOption}
-              onPress={() => setFormData({ ...formData, gender: 'FEMALE' })}
+              onPress={() => {
+                setFormData({ ...formData, gender: 'FEMALE' });
+                if (validationErrors.gender) {
+                  setValidationErrors({ ...validationErrors, gender: undefined });
+                }
+              }}
             >
               <View style={styles.radioButton}>
                 {formData.gender === 'FEMALE' && <View style={styles.radioButtonInner} />}
@@ -425,6 +590,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  inputBoxError: {
+    borderColor: '#EF4444',
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#EF4444',
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  editPictureButtonDisabled: {
+    opacity: 0.6,
   },
 });
 

@@ -39,6 +39,7 @@ function RootLayoutNav() {
         const lastSegment = segments && segments.length > 0 ? segments[segments.length - 1] : null;
         const isOnOnboarding = inTabsGroup && lastSegment === "onboarding";
         const isInAuthFlow = inAuthGroup;
+        const isFilterScreen = currentSegment === "filter";
 
         // Định hướng dựa trên trạng thái authentication
         if (!isAuthenticated) {
@@ -54,7 +55,7 @@ function RootLayoutNav() {
           // - Đang ở auth group, hoặc
           // - Đang ở onboarding, hoặc
           // - Không ở tabs group (có thể đang ở root hoặc trang khác)
-          if (inAuthGroup || isOnOnboarding || !inTabsGroup) {
+          if (inAuthGroup || isOnOnboarding || (!inTabsGroup && !isFilterScreen)) {
             router.replace("/(tabs)/booking");
           }
         }

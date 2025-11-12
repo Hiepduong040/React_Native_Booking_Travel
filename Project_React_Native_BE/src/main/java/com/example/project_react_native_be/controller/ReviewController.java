@@ -68,6 +68,32 @@ public class ReviewController {
     }
 
     @Operation(
+            summary = "Chỉnh sửa đánh giá",
+            description = "Người dùng đã đăng nhập có thể cập nhật nội dung đánh giá của chính họ"
+    )
+    @ApiResponses(value = {
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "Cập nhật đánh giá thành công",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "Không thể cập nhật đánh giá",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class))
+            )
+    })
+    @PutMapping("/{reviewId}")
+    public ResponseEntity<ApiResponse> updateReview(
+            @PathVariable Integer reviewId,
+            @Valid @RequestBody ReviewRequest request
+    ) {
+        ApiResponse response = reviewService.updateReview(reviewId, request);
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(response);
+    }
+
+    @Operation(
             summary = "Lấy danh sách đánh giá theo Hotel ID",
             description = "Lấy danh sách tất cả đánh giá của một khách sạn"
     )
@@ -82,6 +108,20 @@ public class ReviewController {
     public ResponseEntity<ApiResponse> getReviewsByHotelId(@PathVariable Integer hotelId) {
         ApiResponse response = reviewService.getReviewsByHotelId(hotelId);
         HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.INTERNAL_SERVER_ERROR;
+        return ResponseEntity.status(status).body(response);
+    }
+
+    @GetMapping("/my-review/room/{roomId}")
+    public ResponseEntity<ApiResponse> getMyReviewByRoomId(@PathVariable Integer roomId) {
+        ApiResponse response = reviewService.getMyReviewByRoomId(roomId);
+        HttpStatus status;
+        if (response.isSuccess()) {
+            status = HttpStatus.OK;
+        } else if (response.getData() == null) {
+            status = HttpStatus.NOT_FOUND;
+        } else {
+            status = HttpStatus.BAD_REQUEST;
+        }
         return ResponseEntity.status(status).body(response);
     }
 }

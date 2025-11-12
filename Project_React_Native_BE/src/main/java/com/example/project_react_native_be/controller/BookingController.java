@@ -114,5 +114,64 @@ public class BookingController {
                     .body(new ApiResponse("Trạng thái không hợp lệ. Chỉ chấp nhận: PENDING, CONFIRMED, CANCELLED", false, null));
         }
     }
+
+    @Operation(
+            summary = "Lấy danh sách booking sắp tới",
+            description = "Lấy danh sách các booking sắp tới (check-in >= hôm nay và chưa bị hủy) của người dùng hiện tại"
+    )
+    @ApiResponses(value = {
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "Lấy danh sách thành công",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class))
+            )
+    })
+    @GetMapping("/upcoming")
+    public ResponseEntity<ApiResponse> getUpcomingBookings() {
+        ApiResponse response = bookingService.getUpcomingBookings();
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.INTERNAL_SERVER_ERROR;
+        return ResponseEntity.status(status).body(response);
+    }
+
+    @Operation(
+            summary = "Lấy danh sách booking đã qua",
+            description = "Lấy danh sách các booking đã qua (check-out < hôm nay hoặc đã bị hủy) của người dùng hiện tại"
+    )
+    @ApiResponses(value = {
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "Lấy danh sách thành công",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class))
+            )
+    })
+    @GetMapping("/past")
+    public ResponseEntity<ApiResponse> getPastBookings() {
+        ApiResponse response = bookingService.getPastBookings();
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.INTERNAL_SERVER_ERROR;
+        return ResponseEntity.status(status).body(response);
+    }
+
+    @Operation(
+            summary = "Hủy booking",
+            description = "Hủy booking của người dùng hiện tại. Chỉ có thể hủy booking chưa bắt đầu (check-in >= hôm nay)"
+    )
+    @ApiResponses(value = {
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "Hủy booking thành công",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "Không thể hủy booking (đã bắt đầu hoặc đã bị hủy)",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class))
+            )
+    })
+    @PutMapping("/{bookingId}/cancel")
+    public ResponseEntity<ApiResponse> cancelBooking(@PathVariable Integer bookingId) {
+        ApiResponse response = bookingService.cancelBooking(bookingId);
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(response);
+    }
 }
 

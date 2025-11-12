@@ -14,7 +14,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { BOOKING_COLORS } from '@/constants/booking';
-import { createReview, updateReview, getMyReviewByRoomId, ReviewRequest, ReviewResponse } from '@/apis/reviewApi';
+import { createReview, getReviewsByRoomId, updateReview, ReviewRequest, ReviewResponse } from '@/apis/reviewApi';
+import { getRoomById } from '@/apis/roomApi';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function WriteReviewScreen(): React.JSX.Element {
   const router = useRouter();
@@ -22,6 +24,9 @@ export default function WriteReviewScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const roomId = parseInt(params.roomId as string) || 0;
   const hotelName = params.hotelName as string || '';
+  const initialHotelId = params.hotelId ? parseInt(params.hotelId as string, 10) : NaN;
+  const [hotelId, setHotelId] = useState<number | null>(Number.isNaN(initialHotelId) ? null : initialHotelId);
+  const { user } = useAuth();
 
   const [rating, setRating] = useState<number>(5);
   const [comment, setComment] = useState<string>('');
@@ -30,28 +35,77 @@ export default function WriteReviewScreen(): React.JSX.Element {
   const [existingReview, setExistingReview] = useState<ReviewResponse | null>(null);
 
   useEffect(() => {
-    loadExistingReview();
-  }, [roomId]);
+    let isMounted = true;
 
-  const loadExistingReview = async () => {
-    if (!roomId) {
-      setLoadingReview(false);
-      return;
-    }
-    try {
-      setLoadingReview(true);
-      const review = await getMyReviewByRoomId(roomId);
-      if (review) {
-        setExistingReview(review);
-        setRating(review.rating);
-        setComment(review.comment);
+    const loadRoomHotel = async () => {
+      if (hotelId || !roomId) {
+        return;
       }
-    } catch (error) {
-      console.error('Error loading existing review:', error);
-    } finally {
-      setLoadingReview(false);
-    }
-  };
+      try {
+        const room = await getRoomById(roomId);
+        if (room?.hotel?.hotelId && isMounted) {
+          setHotelId(room.hotel.hotelId);
+        }
+      } catch (error) {
+        console.error('Error fetching room detail for review:', error);
+      }
+    };
+
+    loadRoomHotel();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [roomId, hotelId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadExistingReview = async () => {
+      if (!roomId || !user) {
+        setLoadingReview(false);
+        return;
+      }
+      try {
+        setLoadingReview(true);
+        const reviews = await getReviewsByRoomId(roomId);
+        if (!isMounted) {
+          return;
+        }
+        const userReview = reviews.find((review) => {
+          const matchesId = review.user?.userId != null && review.user.userId === user.id;
+          const matchesEmail =
+            review.user?.email &&
+            user.email &&
+            review.user.email.toLowerCase() === user.email.toLowerCase();
+          return matchesId || matchesEmail;
+        });
+
+        if (userReview) {
+          setExistingReview(userReview);
+          setRating(userReview.rating);
+          setComment(userReview.comment || '');
+          if (!hotelId && userReview.hotelId) {
+            setHotelId(userReview.hotelId);
+          }
+        } else if (!hotelId && reviews.length > 0 && reviews[0]?.hotelId) {
+          setHotelId(reviews[0].hotelId);
+        }
+      } catch (error) {
+        console.error('Error loading existing review:', error);
+      } finally {
+        if (isMounted) {
+          setLoadingReview(false);
+        }
+      }
+    };
+
+    loadExistingReview();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [roomId, user, hotelId]);
 
   const handleSubmit = async () => {
     if (!comment.trim()) {
@@ -64,16 +118,20 @@ export default function WriteReviewScreen(): React.JSX.Element {
       return;
     }
 
+    if (!hotelId) {
+      Alert.alert('Lỗi', 'Không xác định được khách sạn để gửi đánh giá. Vui lòng thử lại sau.');
+      return;
+    }
+
     try {
       setLoading(true);
       const reviewData: ReviewRequest = {
-        roomId,
+        hotelId,
         rating,
-        comment: comment.trim(),
+        comment: comment.trim() || undefined,
       };
       
       if (existingReview) {
-        // Update existing review
         await updateReview(existingReview.reviewId, reviewData);
         Alert.alert('Thành công', 'Đánh giá của bạn đã được cập nhật', [
           {
@@ -82,7 +140,6 @@ export default function WriteReviewScreen(): React.JSX.Element {
           },
         ]);
       } else {
-        // Create new review
         await createReview(reviewData);
         Alert.alert('Thành công', 'Đánh giá của bạn đã được gửi', [
           {
@@ -92,7 +149,11 @@ export default function WriteReviewScreen(): React.JSX.Element {
         ]);
       }
     } catch (error: any) {
-      Alert.alert('Lỗi', error.response?.data?.message || 'Không thể gửi đánh giá');
+      const message =
+        error.response?.data?.message ||
+        error.message ||
+        'Không thể gửi đánh giá. Vui lòng thử lại sau.';
+      Alert.alert('Lỗi', message);
     } finally {
       setLoading(false);
     }
@@ -145,7 +206,7 @@ export default function WriteReviewScreen(): React.JSX.Element {
             <View style={styles.hotelNameContainer}>
               <Text style={styles.hotelNameText}>{hotelName}</Text>
               {existingReview && (
-                <Text style={styles.editNote}>Bạn đang chỉnh sửa đánh giá của mình</Text>
+                <Text style={styles.editNote}>Bạn đã gửi đánh giá cho phòng này</Text>
               )}
             </View>
           )}

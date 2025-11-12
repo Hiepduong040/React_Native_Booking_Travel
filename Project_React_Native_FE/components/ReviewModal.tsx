@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../constants/theme';
-import { createReview, ReviewRequest } from '../apis/reviewApi';
+import { createReview, updateReview, ReviewRequest, ReviewResponse } from '../apis/reviewApi';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface ReviewModalProps {
@@ -21,7 +21,10 @@ interface ReviewModalProps {
   hotelId: number;
   hotelName?: string;
   roomId?: number;
+  initialReview?: ReviewResponse | null;
 }
+
+const MAX_COMMENT_LENGTH = 500;
 
 export default function ReviewModal({
   visible,
@@ -29,23 +32,67 @@ export default function ReviewModal({
   hotelId,
   hotelName,
   roomId,
+  initialReview = null,
 }: ReviewModalProps) {
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState('');
+  const [rating, setRating] = useState(initialReview?.rating ?? 5);
+  const [comment, setComment] = useState(initialReview?.comment ?? '');
   const queryClient = useQueryClient();
 
-  const createReviewMutation = useMutation({
-    mutationFn: createReview,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['reviews', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['reviews', 'hotel', hotelId] });
-      Alert.alert('Thành công', 'Đánh giá của bạn đã được gửi');
-      setRating(5);
-      setComment('');
+  useEffect(() => {
+    if (visible) {
+      setRating(initialReview?.rating ?? 5);
+      setComment(initialReview?.comment ?? '');
+    }
+  }, [visible, initialReview]);
+
+  const handleCommentChange = (text: string) => {
+    if (text.length <= MAX_COMMENT_LENGTH) {
+      setComment(text);
+    } else {
+      setComment(text.slice(0, MAX_COMMENT_LENGTH));
+    }
+  };
+
+  const isEditing = Boolean(initialReview);
+
+  const reviewMutation = useMutation({
+    mutationFn: (payload: ReviewRequest) => {
+      if (isEditing && initialReview) {
+        return updateReview(initialReview.reviewId, payload);
+      }
+      return createReview(payload);
+    },
+    onSuccess: (data: ReviewResponse) => {
+      queryClient.setQueryData<ReviewResponse[]>(
+        ['reviews', 'hotel', hotelId],
+        (old) => {
+          if (!old || old.length === 0) {
+            return [data];
+          }
+          const existsIndex = old.findIndex((review) => review.reviewId === data.reviewId);
+          if (existsIndex !== -1) {
+            const updated = [...old];
+            updated.splice(existsIndex, 1, data);
+            return updated;
+          }
+          return [data, ...old];
+        }
+      );
+      queryClient.invalidateQueries({ queryKey: ['reviews', 'hotel', hotelId], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['reviews', roomId], exact: false });
+      if (roomId) {
+        queryClient.setQueryData<ReviewResponse | null>(['myReview', roomId], data);
+        queryClient.invalidateQueries({ queryKey: ['myReview', roomId] });
+      }
+      Alert.alert('Thành công', isEditing ? 'Đánh giá của bạn đã được cập nhật' : 'Đánh giá của bạn đã được gửi');
       onClose();
     },
     onError: (error: any) => {
-      Alert.alert('Lỗi', error.message || 'Không thể gửi đánh giá');
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Không thể gửi đánh giá';
+      Alert.alert('Lỗi', message);
     },
   });
 
@@ -61,8 +108,11 @@ export default function ReviewModal({
       comment: comment.trim() || undefined,
     };
 
-    createReviewMutation.mutate(reviewRequest);
+    reviewMutation.mutate(reviewRequest);
   };
+
+  const isSubmitting = reviewMutation.isPending;
+  const remainingCharacters = MAX_COMMENT_LENGTH - comment.length;
 
   return (
     <Modal
@@ -124,13 +174,16 @@ export default function ReviewModal({
                 placeholder="Chia sẻ trải nghiệm của bạn..."
                 placeholderTextColor="#9CA3AF"
                 value={comment}
-                onChangeText={setComment}
+                onChangeText={handleCommentChange}
                 multiline
                 numberOfLines={6}
                 textAlignVertical="top"
+                maxLength={MAX_COMMENT_LENGTH}
+                editable={!isSubmitting}
               />
               <Text style={styles.commentHint}>
-                {comment.length}/500 ký tự
+                {comment.length}/{MAX_COMMENT_LENGTH} ký tự
+                {remainingCharacters === 0 ? ' (đã đạt giới hạn)' : ''}
               </Text>
             </View>
           </ScrollView>
@@ -139,19 +192,21 @@ export default function ReviewModal({
             <TouchableOpacity
               style={styles.cancelButton}
               onPress={onClose}
-              disabled={createReviewMutation.isPending}
+              disabled={isSubmitting}
             >
               <Text style={styles.cancelButtonText}>Hủy</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.submitButton, createReviewMutation.isPending && styles.submitButtonDisabled]}
+              style={[styles.submitButton, (isSubmitting || rating < 1) && styles.submitButtonDisabled]}
               onPress={handleSubmit}
-              disabled={createReviewMutation.isPending}
+              disabled={isSubmitting}
             >
-              {createReviewMutation.isPending ? (
+              {isSubmitting ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={styles.submitButtonText}>Gửi đánh giá</Text>
+                <Text style={styles.submitButtonText}>
+                  {isEditing ? 'Cập nhật đánh giá' : 'Gửi đánh giá'}
+                </Text>
               )}
             </TouchableOpacity>
           </View>

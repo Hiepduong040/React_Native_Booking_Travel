@@ -1,180 +1,186 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-  Image,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { FontAwesome5, Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from "expo-router";
+import React, { useState, useCallback } from "react";
+import { Alert, Image, StyleSheet, Text, TouchableOpacity, View, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { BOOKING_COLORS } from '../../constants/booking';
 import { useAuth } from '../../contexts/AuthContext';
-import { theme } from '../../constants/theme';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { getCurrentUserInfo } from '../../apis/userApi';
 
-export default function Account() {
-  const { logout, isLoading: authLoading } = useAuth();
+const FAVORITES_STORAGE_KEY = '@favorites';
+
+export default function AccountScreen() {
   const router = useRouter();
-  const queryClient = useQueryClient();
+  const { logout } = useAuth();
+  const [profile, setProfile] = useState<any | null>(null);
+  const [favoriteCount, setFavoriteCount] = useState(0);
 
   const {
     data: userInfo,
     isLoading,
-    error,
   } = useQuery({
     queryKey: ['userInfo'],
     queryFn: getCurrentUserInfo,
     enabled: true,
   });
 
-  const handleLogout = () => {
-    Alert.alert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất?', [
-      {
-        text: 'Hủy',
-        style: 'cancel',
-      },
-      {
-        text: 'Đăng xuất',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          router.replace('/(tabs)/onboarding');
+  useFocusEffect(
+    React.useCallback(() => {
+      let isActive = true;
+      const load = async () => {
+        try {
+          const json = await AsyncStorage.getItem("userProfile");
+          if (isActive && json) {
+            setProfile(JSON.parse(json));
+          }
+          
+          // Load favorites count
+          const favoritesJson = await AsyncStorage.getItem(FAVORITES_STORAGE_KEY);
+          if (favoritesJson) {
+            const favorites = JSON.parse(favoritesJson);
+            setFavoriteCount(Array.isArray(favorites) ? favorites.length : 0);
+          }
+        } catch (error) {
+          console.error('Error loading profile:', error);
+        }
+      };
+      load();
+      return () => {
+        isActive = false;
+      };
+    }, [])
+  );
+
+  const handleLogout = async () => {
+    Alert.alert(
+      "Xác nhận đăng xuất",
+      "Bạn có chắc chắn muốn đăng xuất không?",
+      [
+        {
+          text: "Hủy",
+          style: "cancel",
         },
-      },
-    ]);
+        {
+          text: "Đăng xuất",
+          style: "destructive",
+          onPress: async () => {
+            await logout();
+            router.replace("/(auth)/login");
+          },
+        },
+      ]
+    );
   };
 
-  if (authLoading || isLoading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (error) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
-          <Text style={styles.errorText}>
-            {error instanceof Error ? error.message : 'Không thể tải thông tin tài khoản'}
-          </Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => queryClient.invalidateQueries({ queryKey: ['userInfo'] })}>
-            <Text style={styles.retryButtonText}>Thử lại</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const displayName = userInfo 
+    ? `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim() || profile?.fullName
+    : (profile?.fullName || "Khách");
+  const displayEmail = userInfo?.email || profile?.email || "Chưa đăng nhập";
+  const avatarUrl = userInfo?.avatarUrl || profile?.avatarUrl || "https://aic.com.vn/wp-content/uploads/2024/10/avatar-fb-mac-dinh-1.jpg";
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar style="light" />
-      
-      {/* Purple Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Profile</Text>
-        <TouchableOpacity
-          onPress={() => router.push('/(tabs)/edit-profile')}
-          style={styles.editButton}
-        >
-          <Ionicons name="create" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Profile Info Section */}
-      <View style={styles.profileSection}>
-        <View style={styles.profileImageContainer}>
-          {userInfo?.avatarUrl ? (
-            <Image source={{ uri: userInfo.avatarUrl }} style={styles.profileImage} />
-          ) : (
-            <View style={styles.profileImagePlaceholder}>
-              <Ionicons name="person" size={50} color="#FFFFFF" />
-            </View>
-          )}
-        </View>
-        <View style={styles.profileInfo}>
-          <Text style={styles.userName}>
-            {userInfo?.firstName} {userInfo?.lastName}
-          </Text>
-          <Text style={styles.userEmail}>{userInfo?.email}</Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => router.push('/(tabs)/edit-profile')}
-          style={styles.editProfileButton}
-        >
-          <Ionicons name="create" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
-
+    <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Menu Options */}
-        <View style={styles.menuSection}>
-          <TouchableOpacity
+        <View style={styles.header}>
+          <Image
+            source={{
+              uri: avatarUrl,
+            }}
+            style={styles.avatar}
+          />
+          <Text style={styles.userName}>{displayName}</Text>
+          <Text style={styles.userEmail}>{displayEmail}</Text>
+        </View>
+
+        <View style={styles.menu}>
+          <TouchableOpacity 
             style={styles.menuItem}
             onPress={() => router.push('/(tabs)/edit-profile')}
           >
-            <Ionicons name="create-outline" size={24} color="#6B7280" />
+            <Ionicons name="create-outline" size={24} color="#4A5568" />
             <Text style={styles.menuText}>Edit Profile</Text>
-            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+            <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.menuItem}>
-            <Ionicons name="lock-closed-outline" size={24} color="#6B7280" />
+            <Ionicons name="lock-closed-outline" size={24} color="#4A5568" />
             <Text style={styles.menuText}>Change Password</Text>
-            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+            <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.menuItem}>
-            <Ionicons name="card-outline" size={24} color="#6B7280" />
+            <Ionicons name="card-outline" size={24} color="#4A5568" />
             <Text style={styles.menuText}>Payment Method</Text>
-            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+            <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
           </TouchableOpacity>
 
-          <TouchableOpacity
+          <TouchableOpacity 
             style={styles.menuItem}
             onPress={() => router.push('/(tabs)/my-bookings')}
           >
-            <Ionicons name="document-text-outline" size={24} color="#6B7280" />
+            <Ionicons name="calendar-outline" size={24} color="#4A5568" />
             <Text style={styles.menuText}>My Bookings</Text>
-            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+            <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => router.push({
+              pathname: '/favorites',
+              params: {},
+            })}
+          >
+            <Ionicons name="heart-outline" size={24} color="#4A5568" />
+            <Text style={styles.menuText}>Favorites</Text>
+            {favoriteCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{favoriteCount}</Text>
+              </View>
+            )}
+            <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.menuItem}>
-            <Ionicons name="eye-outline" size={24} color="#6B7280" />
+            <Ionicons name="eye-outline" size={24} color="#4A5568" />
             <Text style={styles.menuText}>Dark Mode</Text>
-            <View style={styles.toggleSwitch}>
-              <View style={styles.toggleSwitchOff} />
-            </View>
+            <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.menuItem}>
-            <Ionicons name="shield-checkmark-outline" size={24} color="#6B7280" />
+            <Ionicons name="shield-checkmark-outline" size={24} color="#4A5568" />
             <Text style={styles.menuText}>Privacy Policy</Text>
-            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+            <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.menuItem}>
-            <Ionicons name="calendar-outline" size={24} color="#6B7280" />
-            <Text style={styles.menuText}>Terms & Conditions</Text>
-            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+            <Ionicons name="document-text-outline" size={24} color="#4A5568" />
+            <Text style={styles.menuText}>Term & Conditions</Text>
+            <FontAwesome5 name="chevron-right" size={16} color="#A0AEC0" />
           </TouchableOpacity>
         </View>
 
-        {/* Logout Button */}
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={24} color="#FFFFFF" />
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
+        {userInfo || profile ? (
+          <TouchableOpacity style={[styles.menuItem, styles.logoutButton]} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={24} color="#E53E3E" />
+            <Text
+              style={[styles.menuText, { color: "#E53E3E", fontWeight: "bold" }]}
+            >
+              Đăng xuất
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={[styles.menuItem, styles.logoutButton]} onPress={() => router.push("/(auth)/login")}>
+            <Ionicons name="log-in-outline" size={24} color="#3182CE" />
+            <Text
+              style={[styles.menuText, { color: "#3182CE", fontWeight: "bold" }]}
+            >
+              Đăng nhập
+            </Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -183,159 +189,70 @@ export default function Account() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#EF4444',
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 24,
-  },
-  retryButton: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  header: {
-    backgroundColor: theme.colors.primary,
-    paddingTop: 20,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  editButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileSection: {
-    backgroundColor: theme.colors.primary,
-    paddingBottom: 32,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  profileImageContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  profileImage: {
-    width: '100%',
-    height: '100%',
-  },
-  profileImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  userName: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  userEmail: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginTop: 4,
-  },
-  editProfileButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#f8f9fa",
   },
   scrollView: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
   },
-  menuSection: {
-    backgroundColor: '#FFFFFF',
-    marginTop: 8,
+  header: {
+    alignItems: "center",
+    paddingVertical: 30,
+    backgroundColor: "white",
+    borderBottomWidth: 1,
+    borderBottomColor: "#EDF2F7",
+  },
+  avatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  userName: {
+    fontSize: 24,
+    fontWeight: "bold",
+    marginTop: 15,
+    color: "#2D3748",
+  },
+  userEmail: {
+    fontSize: 16,
+    color: "#718096",
+    marginTop: 5,
+  },
+  menu: {
+    marginTop: 20,
   },
   menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: "white",
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: "#EDF2F7",
   },
   menuText: {
     flex: 1,
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#111827',
-    marginLeft: 16,
+    marginLeft: 15,
+    fontSize: 18,
+    color: "#2D3748",
   },
-  toggleSwitch: {
-    width: 50,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#E5E7EB',
-    justifyContent: 'center',
-    paddingHorizontal: 2,
-  },
-  toggleSwitchOff: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#FFFFFF',
-  },
-  logoutButton: {
-    flexDirection: 'row',
+  badge: {
+    backgroundColor: BOOKING_COLORS.PRIMARY,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginRight: 8,
+    minWidth: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 20,
-    marginTop: 24,
-    marginBottom: 40,
-    paddingVertical: 16,
-    borderRadius: 12,
-    backgroundColor: theme.colors.primary,
-    gap: 8,
   },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: '700',
+  badgeText: {
     color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  logoutButton: {
+    marginTop: 30,
+    borderTopWidth: 1,
+    borderTopColor: "#EDF2F7",
   },
 });

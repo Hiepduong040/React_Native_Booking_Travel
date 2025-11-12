@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,19 +16,25 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { getRoomById, RoomDetailResponse } from '../../../apis/roomApi';
-import { getReviewsByHotelId } from '../../../apis/reviewApi';
+import { getReviewsByHotelId, getMyReviewByRoomId } from '../../../apis/reviewApi';
+import { getPastBookings, getUpcomingBookings, BookingResponse } from '../../../apis/bookingApi';
 import { theme } from '../../../constants/theme';
 import ReviewModal from '../../../components/ReviewModal';
 import ReviewList from '../../../components/ReviewList';
+import { useAuth } from '../../../contexts/AuthContext';
+import { Alert } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
 export default function RoomDetailScreen() {
-  const params = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id: string; openReviewModal?: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const autoOpenHandledRef = useRef(false);
+  const { isAuthenticated, user } = useAuth();
 
   // Ensure we get the correct id from params
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -59,8 +65,195 @@ export default function RoomDetailScreen() {
   } = useQuery({
     queryKey: ['reviews', 'hotel', hotelId],
     queryFn: () => getReviewsByHotelId(hotelId!),
-    enabled: !!hotelId && hotelId > 0,
+    enabled: typeof hotelId === 'number' && hotelId > 0,
+    staleTime: 60 * 1000,
   });
+
+  const {
+    data: myReview,
+    isLoading: loadingMyReview,
+  } = useQuery({
+    queryKey: ['myReview', roomId],
+    queryFn: () => getMyReviewByRoomId(roomId),
+    enabled: isAuthenticated && roomId > 0,
+    staleTime: 60 * 1000,
+  });
+
+  const hasReviews = (reviews?.length || 0) > 0;
+  const averageRating = useMemo(() => {
+    if (!reviews || reviews.length === 0) {
+      return 0;
+    }
+    const sum = reviews.reduce((acc, item) => acc + item.rating, 0);
+    return Number((sum / reviews.length).toFixed(1));
+  }, [reviews]);
+
+  const {
+    data: pastBookings,
+    isLoading: loadingPastBookings,
+  } = useQuery({
+    queryKey: ['userBookings', 'past'],
+    queryFn: getPastBookings,
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const {
+    data: upcomingBookings,
+    isLoading: loadingUpcomingBookings,
+  } = useQuery({
+    queryKey: ['userBookings', 'upcoming'],
+    queryFn: getUpcomingBookings,
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const bookingsLoading = loadingPastBookings || loadingUpcomingBookings;
+
+  const relevantBookings = useMemo(() => {
+    if (!isAuthenticated) {
+      return [];
+    }
+    return [
+      ...(pastBookings || []),
+      ...(upcomingBookings || []),
+    ];
+  }, [isAuthenticated, pastBookings, upcomingBookings]);
+
+  const parseDate = (value: BookingResponse['checkIn']): Date | null => {
+    if (!value) {
+      return null;
+    }
+    if (Array.isArray(value)) {
+      const [year, month, day] = value;
+      if (!year || month === undefined || day === undefined) {
+        return null;
+      }
+      return new Date(year, month - 1, day);
+    }
+    const valueString = String(value);
+    const parsed = new Date(valueString);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valueString);
+    if (match) {
+      const [, y, m, d] = match;
+      return new Date(Number(y), Number(m) - 1, Number(d));
+    }
+    return null;
+  };
+
+  const hasEligibleStay = useMemo(() => {
+    if (!relevantBookings || relevantBookings.length === 0 || roomId <= 0) {
+      return false;
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return relevantBookings.some((booking) => {
+      const bookingRoomId = booking.roomId || booking.room?.roomId;
+      if (bookingRoomId !== roomId) {
+        return false;
+      }
+      if (booking.status === 'CANCELLED') {
+        return false;
+      }
+
+      const checkIn = parseDate(booking.checkIn);
+      const checkOut = parseDate(booking.checkOut);
+      if (!checkIn || !checkOut) {
+        return false;
+      }
+
+      const start = new Date(checkIn);
+      const end = new Date(checkOut);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
+      return end < today || (start <= today && end >= today);
+    });
+  }, [relevantBookings, roomId]);
+
+  const userReview = useMemo(() => {
+    if (myReview !== undefined) {
+      return myReview;
+    }
+    if (!user || !reviews || reviews.length === 0) {
+      return null;
+    }
+    return (
+      reviews.find((review) => {
+        const sameId = review.user?.userId != null && review.user.userId === user.id;
+        const sameEmail =
+          review.user?.email &&
+          user.email &&
+          review.user.email.toLowerCase() === user.email.toLowerCase();
+        return sameId || sameEmail;
+      }) || null
+    );
+  }, [myReview, reviews, user]);
+
+  const canAddReview = isAuthenticated && hasEligibleStay && !userReview;
+  const canEditReview = isAuthenticated && hasEligibleStay && Boolean(userReview);
+
+  const handleAddReviewPress = () => {
+    if (!hasEligibleStay) {
+      Alert.alert('Chưa thể đánh giá', 'Bạn chỉ có thể đánh giá sau khi đã sử dụng dịch vụ (hoặc trong thời gian lưu trú).');
+      return;
+    }
+    setShowReviewModal(true);
+  };
+
+  const handleEditReviewPress = () => {
+    if (!hasEligibleStay) {
+      Alert.alert('Chưa thể chỉnh sửa', 'Bạn chỉ có thể chỉnh sửa đánh giá khi đã sử dụng dịch vụ.');
+      return;
+    }
+    setShowEditModal(true);
+  };
+
+  useEffect(() => {
+    autoOpenHandledRef.current = false;
+  }, [roomId]);
+
+  useEffect(() => {
+    if (params.openReviewModal === 'true') {
+      if (autoOpenHandledRef.current) {
+        return;
+      }
+
+      if (loadingMyReview || bookingsLoading) {
+        return;
+      }
+
+      if (canEditReview) {
+        setShowEditModal(true);
+        autoOpenHandledRef.current = true;
+      } else if (canAddReview) {
+        setShowReviewModal(true);
+        autoOpenHandledRef.current = true;
+      } else if (isAuthenticated && !bookingsLoading) {
+        Alert.alert('Chưa thể đánh giá', 'Bạn chỉ có thể đánh giá sau khi đã sử dụng dịch vụ (hoặc trong thời gian lưu trú).');
+        autoOpenHandledRef.current = true;
+      }
+    } else {
+      autoOpenHandledRef.current = false;
+    }
+  }, [params.openReviewModal, canEditReview, canAddReview, isAuthenticated, bookingsLoading, loadingMyReview]);
+
+  const renderStars = (rating: number) => (
+    <View style={styles.ratingStars}>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <Ionicons
+          key={star}
+          name={star <= rating ? 'star' : 'star-outline'}
+          size={16}
+          color={star <= rating ? '#FFD700' : '#D1D5DB'}
+        />
+      ))}
+    </View>
+  );
 
   if (isLoading) {
     return (
@@ -236,6 +429,18 @@ export default function RoomDetailScreen() {
                   <Text style={styles.hotelName}>{room.hotel.hotelName}</Text>
                 </View>
               )}
+              {hasReviews && (
+                <View style={styles.ratingSummary}>
+                  <View style={styles.ratingBadge}>
+                    <Ionicons name="star" size={16} color="#FFD700" />
+                    <Text style={styles.ratingValue}>{averageRating.toFixed(1)}</Text>
+                  </View>
+                  {renderStars(Math.round(averageRating))}
+                  <Text style={styles.ratingCount}>
+                    {reviews?.length} đánh giá
+                  </Text>
+                </View>
+              )}
             </View>
             <View style={styles.priceContainer}>
               <Text style={styles.price}>
@@ -290,16 +495,43 @@ export default function RoomDetailScreen() {
           {/* Reviews Section */}
           <View style={styles.reviewsSection}>
             <View style={styles.reviewsHeader}>
-              <Text style={styles.descriptionTitle}>Đánh giá</Text>
-              <TouchableOpacity
-                style={styles.addReviewButton}
-                onPress={() => setShowReviewModal(true)}
-              >
-                <Ionicons name="add-circle-outline" size={20} color={theme.colors.primary} />
-                <Text style={styles.addReviewText}>Thêm đánh giá</Text>
-              </TouchableOpacity>
+              <View>
+                <Text style={styles.descriptionTitle}>Đánh giá</Text>
+                {hasReviews && (
+                  <View style={styles.reviewsMeta}>
+                    <Text style={styles.reviewsMetaText}>
+                      Trung bình {averageRating.toFixed(1)}/5 • {reviews?.length} lượt
+                    </Text>
+                  </View>
+                )}
+              </View>
+              {canEditReview ? (
+                <TouchableOpacity
+                  style={styles.addReviewButton}
+                  onPress={handleEditReviewPress}
+                >
+                  <Ionicons name="create-outline" size={20} color={theme.colors.primary} />
+                  <Text style={styles.addReviewText}>Chỉnh sửa đánh giá</Text>
+                </TouchableOpacity>
+              ) : canAddReview ? (
+                <TouchableOpacity
+                  style={styles.addReviewButton}
+                  onPress={handleAddReviewPress}
+                  disabled={bookingsLoading}
+                >
+                  <Ionicons name="add-circle-outline" size={20} color={theme.colors.primary} />
+                  <Text style={styles.addReviewText}>
+                    {bookingsLoading ? 'Đang kiểm tra...' : 'Thêm đánh giá'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
             <ReviewList reviews={reviews || []} isLoading={reviewsLoading} />
+            {isAuthenticated && !userReview && !bookingsLoading && !loadingMyReview && relevantBookings && relevantBookings.length > 0 && !hasEligibleStay && (
+              <Text style={styles.reviewHint}>
+                Vui lòng sử dụng dịch vụ trước khi gửi đánh giá về khách sạn này.
+              </Text>
+            )}
           </View>
         </View>
       </ScrollView>
@@ -328,6 +560,19 @@ export default function RoomDetailScreen() {
           hotelId={room.hotel.hotelId}
           hotelName={room.hotel.hotelName}
           roomId={room.roomId}
+          initialReview={null}
+        />
+      )}
+
+      {/* Edit Review Modal */}
+      {room && room.hotel && userReview && (
+        <ReviewModal
+          visible={showEditModal}
+          onClose={() => setShowEditModal(false)}
+          hotelId={room.hotel.hotelId}
+          hotelName={room.hotel.hotelName}
+          roomId={room.roomId}
+          initialReview={userReview}
         />
       )}
     </SafeAreaView>
@@ -523,6 +768,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9CA3AF',
   },
+  ratingSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  ratingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  ratingValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#B45309',
+  },
+  ratingStars: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  ratingCount: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
   priceContainer: {
     alignItems: 'flex-end',
   },
@@ -607,6 +881,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
+  reviewsMeta: {
+    marginTop: 4,
+  },
+  reviewsMetaText: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
   addReviewButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -620,5 +901,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: theme.colors.primary,
+  },
+  reviewHint: {
+    marginTop: 12,
+    fontSize: 13,
+    color: '#6B7280',
+    fontStyle: 'italic',
   },
 });

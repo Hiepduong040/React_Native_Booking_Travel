@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,15 @@ interface ReviewListProps {
 }
 
 export default function ReviewList({ reviews, isLoading }: ReviewListProps) {
+  const totalReviews = reviews?.length || 0;
+  const averageRating = useMemo(() => {
+    if (!reviews || reviews.length === 0) {
+      return 0;
+    }
+    const sum = reviews.reduce((acc, review) => acc + review.rating, 0);
+    return Number((sum / reviews.length).toFixed(1));
+  }, [reviews]);
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -68,19 +77,19 @@ export default function ReviewList({ reviews, isLoading }: ReviewListProps) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Đánh giá ({reviews.length})</Text>
-        {reviews.length > 0 && (
-          <View style={styles.averageRating}>
-            <Ionicons name="star" size={16} color="#FFD700" />
-            <Text style={styles.averageRatingText}>
-              {(
-                reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
-              ).toFixed(1)}
-            </Text>
+      {/* <View style={styles.header}>
+        <View>
+          <Text style={styles.title}>Đánh giá ({totalReviews})</Text>
+          <Text style={styles.subtitle}>Chia sẻ trải nghiệm thực tế từ khách đã lưu trú</Text>
+        </View>
+        {totalReviews > 0 && (
+          <View style={styles.averageRatingCard}>
+            <Text style={styles.averageRatingValue}>{averageRating.toFixed(1)}</Text>
+            <View style={styles.averageRatingStars}>{renderStars(Math.round(averageRating))}</View>
+            <Text style={styles.averageRatingCount}>{totalReviews} lượt đánh giá</Text>
           </View>
         )}
-      </View>
+      </View> */}
 
       <ScrollView style={styles.reviewsList} showsVerticalScrollIndicator={false}>
         {reviews.map((review) => (
@@ -159,10 +168,39 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
   },
+  subtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 4,
+  },
   averageRating: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+  },
+  averageRatingCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F4F4FF',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    minWidth: 120,
+  },
+  averageRatingValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#4338CA',
+    marginBottom: 4,
+  },
+  averageRatingStars: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  averageRatingCount: {
+    fontSize: 12,
+    color: '#6B7280',
   },
   averageRatingText: {
     fontSize: 16,

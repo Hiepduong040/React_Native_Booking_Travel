@@ -1,424 +1,553 @@
-import React, { useState, useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-  RefreshControl,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { BookingResponse, cancelBooking, getPastBookings, getUpcomingBookings } from '../../apis/bookingApi';
+import { BOOKING_COLORS } from '../../constants/booking';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../../constants/theme';
-import { getUserBookings, BookingResponse } from '../../apis/bookingApi';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Image as ExpoImage } from 'expo-image';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type FilterType = 'all' | 'upcoming' | 'past';
+type TabType = 'upcoming' | 'past';
 
-export default function MyBookingsScreen() {
+export default function BookingsScreen(): React.JSX.Element {
   const router = useRouter();
-  const [filter, setFilter] = useState<FilterType>('all');
-  
-  const {
-    data: bookings,
-    isLoading,
-    error,
-    refetch,
-    isRefreshing,
-  } = useQuery({
-    queryKey: ['userBookings'],
-    queryFn: getUserBookings,
+  const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<TabType>('upcoming');
+
+  const { data: upcomingBookings, isLoading: loadingUpcoming, refetch: refetchUpcoming, error: errorUpcoming } = useQuery({
+    queryKey: ['upcomingBookings'],
+    queryFn: getUpcomingBookings,
+    enabled: activeTab === 'upcoming',
+    retry: 1,
+    onError: (error: any) => {
+      console.error('Error fetching upcoming bookings:', error);
+      // Don't show alert for empty results, only for actual errors
+      if (error.message && !error.message.includes('404') && !error.message.includes('Not Found')) {
+        console.error('Error details:', error);
+      }
+    },
   });
 
-  // Filter bookings based on selected filter
-  const filteredBookings = useMemo(() => {
-    if (!bookings) return [];
-    
+  const { data: pastBookings, isLoading: loadingPast, refetch: refetchPast, error: errorPast } = useQuery({
+    queryKey: ['pastBookings'],
+    queryFn: getPastBookings,
+    enabled: activeTab === 'past',
+    retry: 1,
+    onError: (error: any) => {
+      console.error('Error fetching past bookings:', error);
+      // Don't show alert for empty results, only for actual errors
+      if (error.message && !error.message.includes('404') && !error.message.includes('Not Found')) {
+        console.error('Error details:', error);
+      }
+    },
+  });
+
+  const handleCancelBooking = async (bookingId: number) => {
+    Alert.alert(
+      'Hủy đặt phòng',
+      'Bạn có chắc chắn muốn hủy đặt phòng này?',
+      [
+        { text: 'Không', style: 'cancel' },
+        {
+          text: 'Hủy đặt phòng',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await cancelBooking(bookingId);
+              refetchUpcoming();
+              queryClient.invalidateQueries({ queryKey: ['upcomingBookings'] });
+              Alert.alert('Thành công', 'Đã hủy đặt phòng thành công');
+            } catch (error: any) {
+              Alert.alert('Lỗi', error.response?.data?.message || error.message || 'Không thể hủy đặt phòng');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleViewDetails = (booking: BookingResponse) => {
+    const roomId = booking.roomId || booking.room?.roomId;
+    if (roomId) {
+      router.push(`/(tabs)/(products)/${roomId}`);
+    }
+  };
+
+  const handleWriteReview = (booking: BookingResponse) => {
+    const roomId = booking.roomId || booking.room?.roomId;
+    if (!roomId) {
+      return;
+    }
+
+    router.push({
+      pathname: '/(tabs)/(products)/[id]',
+      params: {
+        id: roomId.toString(),
+        openReviewModal: 'true',
+      },
+    });
+  };
+
+  const handleBookAgain = (booking: BookingResponse) => {
+    const roomId = booking.roomId || booking.room?.roomId;
+    if (roomId) {
+      router.push(`/(tabs)/(products)/${roomId}`);
+    }
+  };
+
+  const formatDate = (dateInput: string | number[] | null | undefined): string => {
+    if (!dateInput) {
+      return 'N/A';
+    }
+
+    try {
+      let date: Date;
+
+      // Handle array format [year, month, day] from backend
+      if (Array.isArray(dateInput)) {
+        const [year, month, day] = dateInput;
+        if (year && month !== undefined && day !== undefined) {
+          date = new Date(year, month - 1, day); // month is 0-indexed in JS Date
+        } else {
+          console.error('Invalid date array:', dateInput);
+          return 'N/A';
+        }
+      } else {
+        // Handle string format
+        const dateString = String(dateInput);
+
+        if (dateString.includes('T')) {
+          // ISO format with time: "YYYY-MM-DDTHH:mm:ss" or "YYYY-MM-DDTHH:mm:ss.SSSZ"
+          date = new Date(dateString);
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+          // Format "YYYY-MM-DD" - parse manually to avoid timezone issues
+          const [year, month, day] = dateString.split('-').map(Number);
+          date = new Date(year, month - 1, day); // month is 0-indexed in JS Date
+        } else {
+          // Try to parse as-is
+          date = new Date(dateString);
+        }
+      }
+
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        console.error('Invalid date:', dateInput);
+        return 'N/A';
+      }
+
+      // Format date to readable string
+      return date.toLocaleDateString('en-US', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch (error) {
+      console.error('Error formatting date:', error, dateInput);
+      return 'N/A';
+    }
+  };
+
+  const parseDate = (value: BookingResponse['checkIn']): Date | null => {
+    if (!value) {
+      return null;
+    }
+    if (Array.isArray(value)) {
+      const [year, month, day] = value;
+      if (!year || month === undefined || day === undefined) {
+        return null;
+      }
+      return new Date(year, month - 1, day);
+    }
+    const valueString = String(value);
+    const parsed = new Date(valueString);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valueString);
+    if (match) {
+      const [, y, m, d] = match;
+      return new Date(Number(y), Number(m) - 1, Number(d));
+    }
+    return null;
+  };
+
+  const isReviewEligible = (booking: BookingResponse): boolean => {
+    if (!booking || booking.status === 'CANCELLED') {
+      return false;
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    switch (filter) {
-      case 'upcoming':
-        return bookings.filter((booking) => {
-          const checkIn = new Date(booking.checkIn);
-          checkIn.setHours(0, 0, 0, 0);
-          return checkIn >= today;
-        });
-      case 'past':
-        return bookings.filter((booking) => {
-          const checkOut = new Date(booking.checkOut);
-          checkOut.setHours(0, 0, 0, 0);
-          return checkOut < today;
-        });
-      default:
-        return bookings;
-    }
-  }, [bookings, filter]);
+    const checkIn = parseDate(booking.checkIn);
+    const checkOut = parseDate(booking.checkOut);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'CONFIRMED':
-        return '#10B981';
-      case 'PENDING':
-        return '#F59E0B';
-      case 'CANCELLED':
-        return '#EF4444';
-      default:
-        return '#6B7280';
+    if (!checkIn || !checkOut) {
+      return false;
     }
+
+    const start = new Date(checkIn);
+    const end = new Date(checkOut);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
+    return end < today || (start <= today && end >= today);
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'CONFIRMED':
-        return 'Đã xác nhận';
-      case 'PENDING':
-        return 'Đang chờ';
-      case 'CANCELLED':
-        return 'Đã hủy';
-      default:
-        return status;
-    }
+  const renderBookingCard = (booking: BookingResponse) => {
+    const isUpcoming = activeTab === 'upcoming';
+    const roomId = booking.roomId || booking.room?.roomId;
+    const hotelName = booking.hotelName || booking.room?.hotelName || 'Hotel';
+    const roomType = booking.roomType || booking.room?.roomType || 'Room';
+    const location = booking.hotelLocation || booking.hotelAddress || booking.hotelCity || booking.room?.hotelAddress || booking.room?.hotelCity || '';
+    const imageUrl = booking.roomImageUrl || booking.room?.roomImageUrl || 'https://via.placeholder.com/300x200?text=No+Image';
+    const eligibleForReview = isReviewEligible(booking);
+    const hasUserReview = typeof booking.rating === 'number' && booking.rating > 0;
+
+    return (
+      <View key={booking.bookingId} style={styles.bookingCard}>
+        <View style={styles.bookingHeader}>
+          <Text style={styles.bookingId}>Booking ID: {booking.bookingId}</Text>
+          <Text style={styles.bookingDate}>
+            {formatDate(booking.checkIn)} - {formatDate(booking.checkOut)}
+          </Text>
+        </View>
+
+        <View style={styles.bookingContent}>
+          <ExpoImage
+            source={{
+              uri: imageUrl,
+            }}
+            style={styles.roomImage}
+            contentFit="cover"
+          />
+          <View style={styles.bookingInfo}>
+            {/* Rating - hiển thị kể cả khi bằng 0 */}
+            <View style={styles.ratingRow}>
+              {[...Array(5)].map((_, i) => (
+                <Ionicons
+                  key={i}
+                  name={i < Math.floor(booking.rating || 0) ? 'star' : 'star-outline'}
+                  size={14}
+                  color={BOOKING_COLORS.RATING}
+                />
+              ))}
+              <Text style={styles.ratingText}>
+                {(booking.rating || 0).toFixed(1)} ({(booking.reviewCount || 0)} {(booking.reviewCount || 0) === 1 ? 'Review' : 'Reviews'})
+              </Text>
+            </View>
+
+            {/* Room Type */}
+            {roomType && (
+              <Text style={styles.roomType}>{roomType}</Text>
+            )}
+
+            {/* Hotel Name */}
+            <Text style={styles.hotelName}>{hotelName}</Text>
+
+            {/* Location */}
+            {location && (
+              <View style={styles.locationRow}>
+                <Ionicons name="location-outline" size={16} color={BOOKING_COLORS.TEXT_SECONDARY} />
+                <Text style={styles.location}>
+                  {location}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.bookingActions}>
+          {isUpcoming ? (
+            <>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => handleCancelBooking(booking.bookingId)}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.viewButton}
+                onPress={() => handleViewDetails(booking)}>
+                <Text style={styles.viewButtonText}>View Details</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              {eligibleForReview && (
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => handleWriteReview(booking)}
+                >
+                  <Text style={styles.cancelButtonText}>
+                    {hasUserReview ? 'Edit Review' : 'Write a Review'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.viewButton}
+                onPress={() => handleBookAgain(booking)}>
+                <Text style={styles.viewButtonText}>Book Again</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
+    );
   };
+
+  const renderBookings = () => {
+    const isLoading = activeTab === 'upcoming' ? loadingUpcoming : loadingPast;
+    const bookings = activeTab === 'upcoming' ? upcomingBookings : pastBookings;
+    const error = activeTab === 'upcoming' ? errorUpcoming : errorPast;
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <StatusBar style="dark" />
         <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.loadingText}>Đang tải danh sách booking...</Text>
+          <ActivityIndicator size="large" color={BOOKING_COLORS.PRIMARY} />
+          <Text style={styles.loadingText}>Đang tải...</Text>
         </View>
-      </SafeAreaView>
+      );
+    }
+
+    // If error and no bookings, show empty state (treat as no bookings)
+    if (error && (!bookings || bookings.length === 0)) {
+      // Check if it's a real error or just empty response
+      const errorMessage = (error as any)?.message || '';
+      if (errorMessage.includes('404') || errorMessage.includes('Not Found') || errorMessage.includes('An unexpected error occurred')) {
+        // Treat as empty, not an error
+        return (
+          <View style={styles.centerContent}>
+            <Ionicons name="calendar-outline" size={64} color={BOOKING_COLORS.TEXT_SECONDARY} />
+            <Text style={styles.emptyText}>
+              {activeTab === 'upcoming' ? 'Chưa có đặt phòng sắp tới' : 'Chưa có đặt phòng đã qua'}
+            </Text>
+          </View>
+        );
+      }
+    }
+
+    if (!bookings || bookings.length === 0) {
+    return (
+        <View style={styles.centerContent}>
+          <Ionicons name="calendar-outline" size={64} color={BOOKING_COLORS.TEXT_SECONDARY} />
+          <Text style={styles.emptyText}>
+            {activeTab === 'upcoming' ? 'Chưa có đặt phòng sắp tới' : 'Chưa có đặt phòng đã qua'}
+          </Text>
+        </View>
     );
   }
 
-  if (error) {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <StatusBar style="dark" />
-        <View style={styles.centerContent}>
-          <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
-          <Text style={styles.errorText}>
-            {error instanceof Error ? error.message : 'Không thể tải danh sách booking'}
-          </Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
-            <Text style={styles.retryButtonText}>Thử lại</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
+    return <View style={styles.bookingsList}>{bookings.map(renderBookingCard)}</View>;
+  };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar style="dark" />
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor={BOOKING_COLORS.BACKGROUND} />
+
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Đặt phòng của tôi</Text>
-        <View style={{ width: 24 }} />
+        <Text style={styles.headerTitle}>Bookings</Text>
       </View>
 
-      {/* Filter Tabs */}
-      <View style={styles.filterContainer}>
+      {/* Tab Navigation */}
+      <View style={styles.tabContainer}>
         <TouchableOpacity
-          style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
-          onPress={() => setFilter('all')}
-        >
-          <Text style={[styles.filterTabText, filter === 'all' && styles.filterTabTextActive]}>
-            Tất cả
+          style={[styles.tab, activeTab === 'upcoming' && styles.activeTab]}
+          onPress={() => setActiveTab('upcoming')}>
+          <Text style={[styles.tabText, activeTab === 'upcoming' && styles.activeTabText]}>
+            Upcoming
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.filterTab, filter === 'upcoming' && styles.filterTabActive]}
-          onPress={() => setFilter('upcoming')}
-        >
-          <Text style={[styles.filterTabText, filter === 'upcoming' && styles.filterTabTextActive]}>
-            Sắp tới
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === 'past' && styles.filterTabActive]}
-          onPress={() => setFilter('past')}
-        >
-          <Text style={[styles.filterTabText, filter === 'past' && styles.filterTabTextActive]}>
-            Đã qua
-          </Text>
+          style={[styles.tab, activeTab === 'past' && styles.activeTab]}
+          onPress={() => setActiveTab('past')}>
+          <Text style={[styles.tabText, activeTab === 'past' && styles.activeTabText]}>Past</Text>
         </TouchableOpacity>
       </View>
 
+      {/* Bookings List */}
       <ScrollView
         style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={isRefreshing || false} onRefresh={refetch} />
-        }
-      >
-        {!filteredBookings || filteredBookings.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="calendar-outline" size={64} color="#9CA3AF" />
-            <Text style={styles.emptyText}>Bạn chưa có đặt phòng nào</Text>
-            <TouchableOpacity
-              style={styles.exploreButton}
-              onPress={() => router.push('/(tabs)/booking')}
-            >
-              <Text style={styles.exploreButtonText}>Khám phá phòng</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.bookingsList}>
-            {filteredBookings.map((booking: BookingResponse) => (
-              <TouchableOpacity
-                key={booking.bookingId}
-                style={styles.bookingCard}
-                onPress={() => {
-                  router.push(`/(tabs)/(products)/${booking.room.roomId}`);
-                }}
-              >
-                <View style={styles.bookingHeader}>
-                  <View style={styles.bookingInfo}>
-                    <Text style={styles.hotelName}>{booking.room.hotelName}</Text>
-                    <Text style={styles.roomType}>{booking.room.roomType}</Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: getStatusColor(booking.status) + '20' },
-                    ]}
-                  >
-                    <Text
-                      style={[styles.statusText, { color: getStatusColor(booking.status) }]}
-                    >
-                      {getStatusText(booking.status)}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.bookingDetails}>
-                  <View style={styles.detailRow}>
-                    <Ionicons name="calendar-outline" size={16} color="#9CA3AF" />
-                    <Text style={styles.detailText}>
-                      {new Date(booking.checkIn).toLocaleDateString('vi-VN')} -{' '}
-                      {new Date(booking.checkOut).toLocaleDateString('vi-VN')}
-                    </Text>
-                  </View>
-
-                  <View style={styles.detailRow}>
-                    <Ionicons name="people-outline" size={16} color="#9CA3AF" />
-                    <Text style={styles.detailText}>
-                      {booking.adultsCount} người lớn
-                      {booking.childrenCount > 0 && `, ${booking.childrenCount} trẻ em`}
-                      {booking.infantsCount > 0 && `, ${booking.infantsCount} trẻ sơ sinh`}
-                    </Text>
-                  </View>
-
-                  <View style={styles.detailRow}>
-                    <Ionicons name="cash-outline" size={16} color="#9CA3AF" />
-                    <Text style={styles.detailText}>
-                      {typeof booking.totalPrice === 'number'
-                        ? booking.totalPrice.toLocaleString('vi-VN')
-                        : booking.totalPrice}{' '}
-                      VND
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.bookingFooter}>
-                  <Text style={styles.bookingDate}>
-                    Đặt ngày:{' '}
-                    {new Date(booking.createdAt).toLocaleDateString('vi-VN', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric',
-                    })}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}>
+        {renderBookings()}
       </ScrollView>
-    </SafeAreaView>
+          </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  centerContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#EF4444',
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 24,
-  },
-  retryButton: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    backgroundColor: BOOKING_COLORS.BACKGROUND,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: BOOKING_COLORS.BORDER,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: '700',
-    color: '#111827',
+    color: BOOKING_COLORS.TEXT_PRIMARY,
   },
-  filterContainer: {
+  tabContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: BOOKING_COLORS.BORDER,
     gap: 8,
   },
-  filterTab: {
-    flex: 1,
+  tab: {
+    paddingHorizontal: 20,
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#F9FAFB',
-    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: BOOKING_COLORS.CARD_BACKGROUND,
   },
-  filterTabActive: {
-    backgroundColor: theme.colors.primary,
+  activeTab: {
+    backgroundColor: BOOKING_COLORS.PRIMARY,
   },
-  filterTabText: {
-    fontSize: 14,
+  tabText: {
+    fontSize: 16,
     fontWeight: '500',
-    color: '#6B7280',
+    color: BOOKING_COLORS.TEXT_SECONDARY,
   },
-  filterTabTextActive: {
-    color: '#FFFFFF',
+  activeTabText: {
+    color: BOOKING_COLORS.BACKGROUND,
     fontWeight: '600',
   },
   scrollView: {
     flex: 1,
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-    minHeight: 400,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#9CA3AF',
-    marginTop: 16,
-    marginBottom: 24,
-  },
-  exploreButton: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  exploreButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 20,
   },
   bookingsList: {
-    padding: 20,
     gap: 16,
   },
   bookingCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: BOOKING_COLORS.CARD_BACKGROUND,
     borderRadius: 12,
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 16,
   },
   bookingHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
     marginBottom: 12,
+  },
+  bookingId: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: BOOKING_COLORS.TEXT_PRIMARY,
+    marginBottom: 4,
+  },
+  bookingDate: {
+    fontSize: 14,
+    color: BOOKING_COLORS.TEXT_SECONDARY,
+  },
+  bookingContent: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    gap: 12,
+  },
+  roomImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
   },
   bookingInfo: {
     flex: 1,
-    marginRight: 12,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 4,
+  },
+  ratingText: {
+    fontSize: 12,
+    color: BOOKING_COLORS.TEXT_SECONDARY,
+    marginLeft: 4,
+  },
+  roomType: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: BOOKING_COLORS.TEXT_PRIMARY,
+    marginBottom: 4,
   },
   hotelName: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  roomType: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  statusText: {
-    fontSize: 12,
     fontWeight: '600',
+    color: BOOKING_COLORS.TEXT_PRIMARY,
+    marginBottom: 8,
   },
-  bookingDetails: {
-    gap: 8,
-    marginBottom: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  detailRow: {
+  locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 4,
   },
-  detailText: {
+  location: {
     fontSize: 14,
-    color: '#6B7280',
+    color: BOOKING_COLORS.TEXT_SECONDARY,
   },
-  bookingFooter: {
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+  bookingActions: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  bookingDate: {
-    fontSize: 12,
-    color: '#9CA3AF',
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: BOOKING_COLORS.BORDER,
+    alignItems: 'center',
+    backgroundColor: BOOKING_COLORS.BACKGROUND,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: BOOKING_COLORS.TEXT_PRIMARY,
+  },
+  viewButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: BOOKING_COLORS.PRIMARY,
+    alignItems: 'center',
+  },
+  viewButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: BOOKING_COLORS.BACKGROUND,
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: BOOKING_COLORS.TEXT_SECONDARY,
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: BOOKING_COLORS.TEXT_SECONDARY,
+    textAlign: 'center',
   },
 });
-
